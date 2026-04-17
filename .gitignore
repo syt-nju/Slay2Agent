@@ -1,4 +1,5 @@
-# Agent config dirs (stored in slayer/agent/, linked here)
-.claude
-.cursor
-slayer/
+# Agent config dirs
+.claude/
+.cursor/
+.agent/
+agent/
