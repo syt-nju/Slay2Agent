@@ -1,0 +1,14 @@
+---
+description: Global coding style, comments, error handling, and JSON reading conventions
+alwaysApply: true
+---
+
+# 代码风格
+
+- 保持代码简洁且模块化，优先复用已有逻辑，避免重复实现。
+- 仅在必要时添加简洁注释，重点说明“为什么”，不要重复代码表面含义。
+- 仅在必要时使用 `try` 和 `except`，禁止静默吞掉异常。
+- 如果使用 `except`，必须通过 `logger.error(...)` 输出报错信息。
+- 读取 JSON 数据时，必须通过代码方式读取和解析，例如 `json.load()`、`json.loads()`。
+- 如果任务需求、边界条件或预期行为不清楚，先向用户确认细节后再继续实现。
+

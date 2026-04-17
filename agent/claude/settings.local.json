@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la .cursor* .cursorrules)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(chmod +x:*)",
+      "Read(//Users/syt/Desktop/code/my_cursor/**)",
+      "Read(//Users/syt/Desktop/code/**)",
+      "Read(//Users/syt/Desktop/**)",
+      "Bash(cp -r /Users/syt/Desktop/code/my_cursor/.cursor/. /Users/syt/Desktop/code/slay2agent/slayer/agent/cursor/)",
+      "Bash(echo \"cursor copied: $?\")",
+      "Bash(cp:*)",
+      "Bash(cp -r /Users/syt/Desktop/code/slay2agent/.claude/. /Users/syt/Desktop/code/slay2agent/slayer/agent/claude/)",
+      "Bash(echo \"claude copied: $?\")",
+      "Bash(rm -rf .claude)",
+      "Bash(ln -s slayer/agent/claude .claude)",
+      "Bash(echo \".claude symlink: $?\")",
+      "Bash(ln -s slayer/agent/cursor .cursor)",
+      "Bash(echo \".cursor symlink: $?\")",
+      "Bash(git check-ignore:*)",
+      "Read(//Users/syt/.claude-internal/**)",
+      "Bash(python3 /Users/syt/.claude-internal/auto-approve-readonly.py --version)",
+      "Bash(ssh:*)"
+    ]
+  }
+}
