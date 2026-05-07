@@ -54,15 +54,20 @@ def test_config_subcommand_prints_masked_values(
     out = capsys.readouterr().out
     assert rc == 0
     assert "sk-or-1234567890abcdef" not in out
-    assert "<unset>" in out  # game.base_url unset
+    assert "127.0.0.1:15526" in out  # default STS2MCP base url
     assert "model" in out
 
 
-def test_inspect_is_stub(capsys: pytest.CaptureFixture[str]) -> None:
+def test_inspect_reports_game_unreachable(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Point at an unused localhost port so the connection fails fast.
+    monkeypatch.setenv("STS2MCP_BASE_URL", "http://127.0.0.1:1")
+    monkeypatch.setenv("STS2MCP_TIMEOUT", "0.5")
     rc = main(["inspect"])
     err = capsys.readouterr().err
-    assert rc == 2
-    assert "F-003" in err
+    assert rc == 1
+    assert "inspect failed" in err
 
 
 def test_run_is_stub(capsys: pytest.CaptureFixture[str]) -> None:

@@ -56,7 +56,7 @@ slay2agent 的最终目标是构建一个 train-free、仅依赖 STS2MCP JSON/RE
 
 ### F-003 Game Communication Path
 
-**Status:** planned
+**Status:** implemented
 
 系统需要打通 STS2MCP REST 通路,提供薄封装 client、action 调用和动作后 settle 机制。
 

@@ -1,0 +1,10 @@
+{
+  "state_type": "map",
+  "run": {"act": 1, "floor": 3, "ascension": 0},
+  "player": {"character": "ironclad", "hp": 60, "max_hp": 80, "gold": 120, "potions": [], "max_potion_slots": 3, "relics": []},
+  "next_options": [
+    {"index": 0, "node_type": "monster", "x": 1, "y": 4},
+    {"index": 1, "node_type": "elite", "x": 2, "y": 4},
+    {"index": 2, "node_type": "rest", "x": 3, "y": 4}
+  ]
+}

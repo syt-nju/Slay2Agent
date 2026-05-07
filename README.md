@@ -7,8 +7,9 @@
 ## 现状
 
 - [x] F-001 Runtime Boundary and Configuration:统一 CLI(`slay2agent` console script)+ Config 加载 + STS2MCP env 占位 + 前置文档
-- [x] F-002 LLM Adapter:OpenRouter 适配 + 统一 retry / usage 链路(38 个离线测试)
-- [ ] F-003 Game Communication Path
+- [x] F-002 LLM Adapter:OpenRouter 适配 + 统一 retry / usage 链路
+- [x] F-003 Game Communication Path:STS2MCP REST 客户端(`get_state` / `post_action` / settle)+ 9 个 action 封装 + fixture 驱动测试(69 个离线测试)
+- [ ] F-004 State and Action Domain Model
 - [ ] F-005 Minimal Runnable Agent Loop
 - [ ] F-007 Trace, Metrics, Baseline
 - [ ] F-008 Memory and Reflect Loop
@@ -71,7 +72,8 @@ slay2agent --help
 slay2agent config            # 打印当前配置(密钥 mask)
 slay2agent smoke             # 跑 OpenRouter 链路冒烟(需 OPENROUTER_API_KEY)
 slay2agent smoke --model anthropic/claude-sonnet-4
-slay2agent inspect           # 打印 STS2MCP 当前 state(F-003 待实现)
+slay2agent inspect           # 打印 STS2MCP 当前 game state(需要 mod 运行)
+slay2agent inspect --health  # 仅打印 STS2MCP `/` 健康响应(reachability 检查)
 slay2agent run               # 让 Agent 接管当前局(F-005 待实现)
 ```
 

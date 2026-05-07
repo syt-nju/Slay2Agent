@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from slay2agent.config import DEFAULT_LLM_MODEL, Config, GameConfig, LLMConfig
+from slay2agent.config import (
+    DEFAULT_LLM_MODEL,
+    DEFAULT_STS2MCP_BASE_URL,
+    Config,
+    GameConfig,
+    LLMConfig,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +48,7 @@ def test_llm_config_require_api_key_raises_when_missing() -> None:
 
 def test_game_config_defaults_when_env_empty() -> None:
     cfg = GameConfig.from_env()
-    assert cfg.base_url is None
+    assert cfg.base_url == DEFAULT_STS2MCP_BASE_URL
     assert cfg.timeout == 30.0
 
 
@@ -52,12 +58,6 @@ def test_game_config_picks_up_env(monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = GameConfig.from_env()
     assert cfg.base_url == "http://127.0.0.1:9001"
     assert cfg.timeout == 10.0
-
-
-def test_game_config_require_base_url_raises_when_missing() -> None:
-    cfg = GameConfig.from_env()
-    with pytest.raises(RuntimeError, match="STS2MCP_BASE_URL"):
-        cfg.require_base_url()
 
 
 def test_config_load_skips_dotenv_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:

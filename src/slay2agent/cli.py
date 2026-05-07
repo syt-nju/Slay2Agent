@@ -1,8 +1,8 @@
 """slay2agent unified CLI.
 
 Subcommands:
-    smoke    Run the OpenRouter live smoke test (existing F-002 entrypoint).
-    inspect  Print current STS2MCP state (stub until F-003).
+    smoke    Run the OpenRouter live smoke test (F-002).
+    inspect  Print current STS2MCP state via the game REST client (F-003).
     run      Run the agent loop on the current game (stub until F-005).
     config   Print effective configuration (with secrets masked).
 """
@@ -32,7 +32,7 @@ def _cmd_config(args: argparse.Namespace) -> int:
     print(f"  api_key  = {_mask(cfg.llm.api_key)}")
     print(f"  timeout  = {cfg.llm.timeout}")
     print("Game (STS2MCP):")
-    print(f"  base_url = {cfg.game.base_url or '<unset>'}")
+    print(f"  base_url = {cfg.game.base_url}")
     print(f"  timeout  = {cfg.game.timeout}")
     return 0
 
@@ -48,11 +48,22 @@ def _cmd_smoke(args: argparse.Namespace) -> int:
 
 
 def _cmd_inspect(args: argparse.Namespace) -> int:
-    print(
-        "inspect: not implemented yet — pending F-003 (Game Communication Path).",
-        file=sys.stderr,
-    )
-    return 2
+    import json as _json
+
+    from slay2agent.game import GameClient, GameClientError
+
+    cfg = Config.load()
+    try:
+        with GameClient(cfg.game.base_url, timeout=cfg.game.timeout) as client:
+            if args.health:
+                payload = client.health()
+            else:
+                payload = client.get_state()
+    except GameClientError as exc:
+        print(f"inspect failed: {exc}", file=sys.stderr)
+        return 1
+    print(_json.dumps(payload, indent=2, ensure_ascii=False))
+    return 0
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
@@ -81,7 +92,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_smoke.set_defaults(func=_cmd_smoke)
 
     p_inspect = sub.add_parser(
-        "inspect", help="Print current STS2MCP state (stub until F-003)."
+        "inspect", help="Print current STS2MCP state (needs the mod running)."
+    )
+    p_inspect.add_argument(
+        "--health",
+        action="store_true",
+        help="Hit GET / instead of /api/v1/singleplayer (mod reachability check).",
     )
     p_inspect.set_defaults(func=_cmd_inspect)
 

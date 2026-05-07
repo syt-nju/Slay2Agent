@@ -36,30 +36,26 @@ class LLMConfig:
         return self.api_key
 
 
+DEFAULT_STS2MCP_BASE_URL = "http://127.0.0.1:15526"
+
+
 @dataclass(frozen=True)
 class GameConfig:
     """STS2MCP REST endpoint config.
 
-    `base_url` defaults to None until F-003 pins the mod's actual address.
+    Default port 15526 matches the upstream mod
+    (https://github.com/Gennadiyev/STS2MCP).
     """
 
-    base_url: str | None = None
+    base_url: str = DEFAULT_STS2MCP_BASE_URL
     timeout: float = 30.0
 
     @classmethod
     def from_env(cls) -> "GameConfig":
         return cls(
-            base_url=os.getenv("STS2MCP_BASE_URL"),
+            base_url=os.getenv("STS2MCP_BASE_URL", DEFAULT_STS2MCP_BASE_URL),
             timeout=float(os.getenv("STS2MCP_TIMEOUT", "30")),
         )
-
-    def require_base_url(self) -> str:
-        if not self.base_url:
-            raise RuntimeError(
-                "STS2MCP_BASE_URL is not set. Start the STS2MCP mod and "
-                "set STS2MCP_BASE_URL=http://<host>:<port> in .env."
-            )
-        return self.base_url
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,25 @@
+{
+  "state_type": "monster",
+  "run": {"act": 1, "floor": 3, "ascension": 0},
+  "player": {
+    "character": "ironclad",
+    "hp": 70,
+    "max_hp": 80,
+    "gold": 99,
+    "energy": 3,
+    "hand": [
+      {"id": "Strike", "card_index": 0, "cost": 1},
+      {"id": "Defend", "card_index": 1, "cost": 1},
+      {"id": "Bash", "card_index": 2, "cost": 2}
+    ],
+    "draw_pile_count": 7,
+    "discard_pile_count": 0,
+    "potions": [],
+    "max_potion_slots": 3,
+    "relics": [{"id": "BurningBlood"}]
+  },
+  "enemies": [
+    {"entity_id": "JAW_WORM_0", "name": "Jaw Worm", "hp": 30, "max_hp": 40,
+     "intent": {"type": "attack", "damage": 11}}
+  ]
+}

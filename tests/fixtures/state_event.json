@@ -1,0 +1,14 @@
+{
+  "state_type": "event",
+  "run": {"act": 1, "floor": 5, "ascension": 0},
+  "player": {"character": "ironclad", "hp": 60, "max_hp": 80, "gold": 120, "potions": [], "max_potion_slots": 3, "relics": []},
+  "event": {
+    "id": "BigFish",
+    "in_dialogue": false,
+    "options": [
+      {"index": 0, "label": "Eat the berries", "locked": false},
+      {"index": 1, "label": "Eat the cake",    "locked": false},
+      {"index": 2, "label": "Open the box (locked)", "locked": true}
+    ]
+  }
+}

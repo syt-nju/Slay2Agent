@@ -27,8 +27,7 @@ Execution Mode.
 - [x] F-002 OpenRouter baseline implemented.
 - [x] F-002 retry, usage, error classification, smoke entry implemented.
 - [x] F-001 unified CLI + Config + STS2MCP env placeholder + README prerequisites.
-- [ ] F-003 STS2MCP mod reachability smoke.
-- [ ] F-003 Game client and action wrappers.
+- [x] F-003 GameClient (get_state / post_action / settle) + 9 action wrappers + fixture-driven tests + functional `slay2agent inspect`.
 - [ ] F-004 State schema and compact prompt.
 - [ ] F-005 Minimal Agent loop.
 - [ ] F-006 Skill router and tool bridge.
@@ -68,20 +67,20 @@ Verification:
 
 Linked feature: F-003
 
-- [ ] Confirm STS2MCP version and available REST endpoints.
-- [ ] Add `src/slay2agent/game/client.py`.
-- [ ] Add `src/slay2agent/game/actions.py`.
-- [ ] Add action response/request fixtures.
-- [ ] Add tests for at least 5 representative actions.
-- [ ] Add manual inspect command.
-- [ ] Add action settle helper or minimal settle integration.
-- [ ] Run fixture tests.
-- [ ] Manually run mod reachability smoke when local game/mod is available.
+- [x] Confirm STS2MCP REST endpoints (singleplayer GET/POST `/api/v1/singleplayer`, default port 15526).
+- [x] Add `src/slay2agent/game/client.py` (`GameClient`, `GameHTTPError`, `ActionError`, `post_action_and_settle`).
+- [x] Add `src/slay2agent/game/actions.py` (9 wrappers: combat, map, event, rewards, menu).
+- [x] Add 7 fixtures (5 state types + ok/error action responses).
+- [x] Add tests covering 9 actions + get_state + settle + HTTP/JSON/action error paths.
+- [x] Wire `slay2agent inspect` (and `--health`) to `GameClient`.
+- [x] Settle integrated into action wrappers via `post_action_and_settle`.
+- [x] Run fixture tests (69 passing total).
+- [ ] Manually run mod reachability smoke when local game/mod is available (deferred to user; needs game running).
 
-Expected verification:
+Verification:
 
-- Fixture tests pass.
-- `inspect` can print current state when STS2MCP is running.
+- Fixture tests pass; `slay2agent inspect` reaches STS2MCP, returns JSON state, and surfaces clear errors when the mod is down.
+- Action wrappers send STS2MCP-shaped JSON bodies, drop optional `None` params, and surface mod-side errors as `ActionError`.
 
 ## Phase 3 - State and Action Domain Model
 
