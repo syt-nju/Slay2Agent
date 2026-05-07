@@ -3,3 +3,13 @@
 .cursor/
 .agent/
 agent/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# Secrets
+.env
