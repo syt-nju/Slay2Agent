@@ -1,6 +1,6 @@
 # LLM Adapter 层设计方案
 
-配套 [`plan.md §4.4`](../plan.md)。目标:**跑通 chat + tool_call 最小链路**。
+F-002 (LLM Adapter) 的内部设计文档,配套 [`feature-requirements.md`](./feature-requirements.md) 与 [`framework-design.md`](./framework-design.md)。目标:**跑通 chat + tool_call 最小链路**。
 
 ## TODO
 

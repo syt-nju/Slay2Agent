@@ -4,9 +4,9 @@
 
 ## Current Mode
 
-Design Mode.
+Execution Mode.
 
-已确认最终目标和 feature list。进入实现前,需要由用户确认下一项要实现的 feature。
+已确认从 F-001 开始按 feature 顺序推进。F-003 起需要 STS2MCP 实例或样本,目前用户侧暂未提供,届时会先暂停等待。
 
 ## Feature Order
 
@@ -26,7 +26,7 @@ Design Mode.
 
 - [x] F-002 OpenRouter baseline implemented.
 - [x] F-002 retry, usage, error classification, smoke entry implemented.
-- [ ] F-001 final CLI/config boundaries reviewed against current code.
+- [x] F-001 unified CLI + Config + STS2MCP env placeholder + README prerequisites.
 - [ ] F-003 STS2MCP mod reachability smoke.
 - [ ] F-003 Game client and action wrappers.
 - [ ] F-004 State schema and compact prompt.
@@ -48,16 +48,21 @@ Design Mode.
 
 Linked features: F-001, F-002
 
-- [ ] Review current `.env.example`, README, and CLI entrypoint against F-001.
-- [ ] Make sure local configuration documents cloud LLM only and no GPU requirement.
-- [ ] Verify no secrets or local-only files are staged for commit.
-- [ ] Run LLM adapter unit tests.
-- [ ] Run OpenRouter smoke only when API credentials are available.
+- [x] Review `.env.example`, README, and CLI entrypoint against F-001.
+- [x] Add `src/slay2agent/config.py` (LLMConfig + GameConfig, env-driven, no GPU).
+- [x] Add `src/slay2agent/cli.py` with `config` / `smoke` / `inspect` / `run` subcommands.
+- [x] Register `slay2agent` console script via pyproject; wire `main.py` to it.
+- [x] Document STS2MCP / LLM prerequisites in README; drop dangling `plan.md` reference.
+- [x] Add `STS2MCP_BASE_URL` / `STS2MCP_TIMEOUT` placeholders in `.env.example`.
+- [x] Verify no secrets or local-only files are staged for commit.
+- [x] Run offline tests (53 passed).
+- [ ] Run OpenRouter smoke only when API credentials are available (manual, deferred to user).
 
-Expected verification:
+Verification:
 
-- Offline tests for LLM adapter pass.
-- Documentation makes runtime boundary clear.
+- Offline tests for LLM adapter and config/CLI all pass.
+- `slay2agent --help` and `slay2agent config` work end-to-end with masked secrets.
+- Documentation makes runtime boundary clear (LLM cloud only, STS2MCP REST only, no GPU).
 
 ## Phase 2 - Game Communication Path
 
@@ -161,6 +166,6 @@ Linked feature: F-009
 
 ## Open Blocks
 
-- Need user decision on first implementation feature before leaving Design Mode.
-- Need STS2MCP runtime availability for manual smoke and full run checks.
+- F-003 needs STS2MCP REST samples (running mod / saved JSON / interface docs). User confirmed none available yet — F-003 work blocked until provided.
+- Need STS2MCP runtime availability for manual smoke and full run checks (F-005 onward).
 - Need baseline run count and success threshold before F-008 verification.

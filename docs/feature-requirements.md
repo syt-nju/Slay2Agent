@@ -29,7 +29,7 @@ slay2agent 的最终目标是构建一个 train-free、仅依赖 STS2MCP JSON/RE
 
 ### F-001 Runtime Boundary and Configuration
 
-**Status:** planned
+**Status:** implemented
 
 系统必须明确运行边界:只接 STS2MCP REST,只使用云端 LLM API,并通过本地配置提供模型、endpoint、API key 和运行参数。
 
