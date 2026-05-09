@@ -70,6 +70,51 @@ def test_inspect_reports_game_unreachable(
     assert "inspect failed" in err
 
 
+class _FakeGameClient:
+    """Stand-in for GameClient so inspect can be exercised without a live mod."""
+
+    def __init__(self, base_url: str, *, timeout: float = 30.0) -> None:
+        self.base_url = base_url
+        self.timeout = timeout
+
+    def __enter__(self) -> "_FakeGameClient":
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
+    def get_state(self, *, fmt: str = "json") -> dict[str, object]:
+        return {"state_type": "menu", "menu_screen": "main", "options": ["singleplayer"]}
+
+    def health(self) -> dict[str, object]:
+        return {"status": "ok", "message": "Hello from STS2 MCP v0.4.0"}
+
+
+def test_inspect_prints_state_when_mod_reachable(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("slay2agent.game.GameClient", _FakeGameClient)
+    rc = main(["inspect"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert '"state_type": "menu"' in out
+    assert '"menu_screen": "main"' in out
+
+
+def test_inspect_health_prints_mod_hello(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("slay2agent.game.GameClient", _FakeGameClient)
+    rc = main(["inspect", "--health"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert '"status": "ok"' in out
+    assert "STS2 MCP" in out
+
+
 def test_run_is_stub(capsys: pytest.CaptureFixture[str]) -> None:
     rc = main(["run"])
     err = capsys.readouterr().err
