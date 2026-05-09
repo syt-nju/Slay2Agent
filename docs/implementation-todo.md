@@ -11,8 +11,8 @@ Execution Mode(除非 memory 设计需要再次重审,届时回 Design Mode)。
 
 ## Feature Order
 
-1. F-002 LLM Adapter ✅(已实施 OpenRouter baseline)
-2. F-003 Game Communication Path ✅(已实施 client + 9 actions + fixtures)
+1. F-002 LLM Adapter ✅(已实施,UsageTracker 按 `(role, model)` 分桶)
+2. F-003 Game Communication Path ✅(已实施 client + 28-action 声明式 schema 表 + dispatch + state-type gate + fixtures)
 3. F-004 State Parser & Compact View
 4. F-005 Phase 1 Demo Loop
 5. F-006 Tool Bridge & Loop Detector
@@ -25,8 +25,8 @@ F-005 / F-006 / F-007 互相耦合,会在同一个 phase 内推进:demo loop 走
 
 ## Progress Summary
 
-- [x] F-002 OpenRouter baseline + retry + usage + smoke entry
-- [x] F-003 GameClient + 9 action wrappers + fixture-driven tests + `slay2agent inspect`
+- [x] F-002 OpenRouter baseline + retry + role-aware usage(`(role, model)` 分桶)+ smoke entry
+- [x] F-003 GameClient + 28-action 声明式 schema 表(`ACTION_SCHEMAS`)+ `dispatch` + `actions_for_state`(F-006 gate 直接消费)+ `to_tool_schema`(LLM tool 描述来源)+ fixture 驱动测试 + `slay2agent inspect`
 - [x] `tests/fixtures/real/` 已收集 14 个真实 STS2MCP state 样本
 - [x] `vendor/sts2mcp-docs/` 已就位
 - [ ] F-004 State Parser & compact view
@@ -60,7 +60,7 @@ Expected verification:
 
 ### F-006 Tool Bridge & Loop Detector
 
-- [ ] 按 `state_type` 决定可见 game tool 集合(gate)
+- [ ] gate 直接消费 `actions_for_state(state_type)`,叠加 memory tool(F-008a 的 `list_skills` / `read_skill`)始终可见
 - [ ] loop detector(最近 N 步同 `(action, args)` 重复达阈值 → 终止)
 - [ ] gate 收窄 / loop 触发 / loop 未触发 三类单元测试
 
@@ -68,8 +68,8 @@ Expected verification:
 
 - [ ] `runs/<run_id>/steps.jsonl` 写入器(主 agent 每步一行)
 - [ ] `runs/<run_id>/subagent.jsonl` 写入器(F-008b/c 才会用,先把接口暴露好)
-- [ ] LLM adapter 增加 `agent_role` 入参,token usage 按 `(role, model)` 分桶
-- [ ] `runs/<run_id>/summary.json`(终止原因 + 三类 agent token 拆分 + 调用次数)
+- [ ] `UsageTracker` 在 `record()` 处加 per-(role, model) 调用次数计数(分桶本身已在 F-002 完成)
+- [ ] `runs/<run_id>/summary.json`(终止原因 + `tracker.snapshot()` + `tracker.role_totals()` + 调用次数)
 
 ### F-005 Phase 1 Demo Loop
 
@@ -136,6 +136,7 @@ Expected verification:
 旧 doc 中的以下内容已删除或重写,记录于此防止混淆:
 
 - 旧 F-001 Runtime Boundary:并入 Phase 0 Setup,不再占 feature ID。
+- 旧 F-003 内的 9 个 Python action wrapper(`actions.py`):废弃,改为 `action_schemas.py` 声明式表 + `dispatch` 通用 runner。理由:wrapper 全是 pure pass-through,新增 action 反而要写函数;改成表后 F-006 gate / LLM `ToolSchema` / 测试都共用同一个 SSOT。
 - 旧 F-006 内的 skill 拆分(combat / map / event / rewards / fallback):废弃,改为 prompt 层 skill 元数据自动注入。
 - 旧 F-006 内的 `pre_execute` 参数预校验:废弃,STS2MCP 报错走 `ActionError` 路径。
 - 旧 F-007 内的胜率 / Act 进度 / baseline 对照:删除,研究方法改为纵向迭代 + memory-iteration-log。

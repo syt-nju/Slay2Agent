@@ -7,12 +7,13 @@
 ## 现状
 
 - [x] F-001 Runtime Boundary and Configuration:统一 CLI(`slay2agent` console script)+ Config 加载 + STS2MCP env 占位 + 前置文档
-- [x] F-002 LLM Adapter:OpenRouter 适配 + 统一 retry / usage 链路
-- [x] F-003 Game Communication Path:STS2MCP REST 客户端(`get_state` / `post_action` / settle)+ 9 个 action 封装 + fixture 驱动测试(69 个离线测试)
-- [ ] F-004 State and Action Domain Model
-- [ ] F-005 Minimal Runnable Agent Loop
-- [ ] F-007 Trace, Metrics, Baseline
-- [ ] F-008 Memory and Reflect Loop
+- [x] F-002 LLM Adapter:OpenRouter 适配 + retry + UsageTracker 按 `(role, model)` 分桶
+- [x] F-003 Game Communication Path:STS2MCP REST 客户端(`get_state` / `post_action` / settle)+ 28-action 声明式 schema 表(`ACTION_SCHEMAS` + `dispatch` + `actions_for_state` + `to_tool_schema`)+ fixture 驱动测试(98 个离线测试)
+- [ ] F-004 State Parser & Compact View
+- [ ] F-005 Phase 1 Demo Loop
+- [ ] F-006 Tool Bridge & Loop Detector
+- [ ] F-007 Trace & Token Accounting
+- [ ] F-008a/b/c Skill Registry / Skill Creator / Oracle Updater
 
 完整需求与架构见 [`docs/feature-requirements.md`](./docs/feature-requirements.md) 与 [`docs/framework-design.md`](./docs/framework-design.md)。LLM 适配层内部细节见 [`docs/llm-adapter.md`](./docs/llm-adapter.md)。
 

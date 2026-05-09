@@ -31,7 +31,7 @@ Game HTTP Client (STS2MCP REST)
 
 ### Action Layer
 
-`src/slay2agent/game/actions.py`:STS2MCP action 的 Python 封装。函数签名 + docstring 是 tool schema 的来源之一。Action 不决定何时执行,合法性由 tool bridge 控制。
+`src/slay2agent/game/action_schemas.py`:STS2MCP action 的**声明式元数据表** (`ACTION_SCHEMAS`),配合 `dispatch(client, name, args)` 通用 runner。表本身覆盖 STS2MCP 当前版本暴露的全部 singleplayer action(28 个),每行带 description / 参数 schema / `applicable_state_types`,既作为 LLM `ToolSchema` 来源(`to_tool_schema(action)`),又作为 tool bridge gate 的输入(`actions_for_state(state_type)`)。Action 不决定何时执行,合法性由 tool bridge 控制。新增 STS2MCP action = 表里加一行,不写新函数。
 
 ### State Parser
 
@@ -43,7 +43,7 @@ Game HTTP Client (STS2MCP REST)
 
 `src/slay2agent/llm/`:统一云端模型调用。canonical dataclass + provider 适配。首版只接 OpenRouter。
 
-usage 必须按 `(agent_role, model)` 分桶记录 input/output token。三类 agent(`main` / `skill_creator` / `oracle_updater`)在调用 adapter 时显式传入 role 标记,trace 与 run summary 依赖这个标记做拆分。
+usage 按 `(agent_role, model)` 分桶记录 input/output token。`agent_role: Literal["main","skill_creator","oracle_updater"]` 是上层语义,**adapter 不感知** —— orchestrator / sub-agent runner 拿到 `LLMResponse` 后调 `tracker.record(role, resp.model, resp.usage)`。这一拆分是 trace 与 run summary 报告"三类 agent 各自 token"的硬基础。
 
 ### Tool Bridge
 

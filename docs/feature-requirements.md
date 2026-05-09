@@ -39,7 +39,7 @@ slay2agent 是一个**研究型 testbed**,用于探索"什么样的 memory 与 c
 
 ### F-002 LLM Adapter
 
-**Status:** implemented for OpenRouter baseline
+**Status:** implemented
 
 所有 LLM 调用必须通过 provider-agnostic 适配层。首版支持 OpenRouter,统一 chat、tool call、usage、retry 和错误分类。三类 agent(主 / skill creator / oracle updater)共用同一 adapter。
 
@@ -48,24 +48,25 @@ slay2agent 是一个**研究型 testbed**,用于探索"什么样的 memory 与 c
 - 上层只依赖 canonical request/response 类型,不直接依赖 provider wire format。
 - 支持 text response、tool calls、stop reason、token usage。
 - transient 错误可重试,不可重试错误可分类返回。
-- usage 按 `(agent_role, model)` 分桶记录 input/output token,不做价格计算或预算熔断。
-- 离线测试覆盖协议类型、错误分类、retry 和 usage。
+- usage 按 `(agent_role, model)` 分桶记录 input/output token,不做价格计算或预算熔断。`agent_role` 是上层语义,在 `UsageTracker.record(role, model, usage)` 处显式传入,**不污染** adapter 接口。
+- 离线测试覆盖协议类型、错误分类、retry 和 usage(含 role-aware 分桶)。
 
 ### F-003 Game Communication Path
 
 **Status:** implemented
 
-系统需要打通 STS2MCP REST 通路,提供薄封装 client、action 调用和动作后 settle 机制。
+系统需要打通 STS2MCP REST 通路,提供薄封装 client、action 元数据表和动作后 settle 机制。
 
 **Acceptance criteria**
 
 - `get_state` 能读取当前游戏 JSON state。
 - `post_action` 能调用 STS2MCP action 并返回响应。
-- action 封装与 STS2MCP 暴露的工具签名保持一致;action docstring 可作为 LLM tool 描述来源。
-- 动作后统一等待状态稳定,避免 end turn 后读取到旧状态。
+- 维护一份 **声明式 action 元数据表**(`ACTION_SCHEMAS`),覆盖 STS2MCP 当前版本暴露的全部 singleplayer action,字段包含 name / description / 参数 schema / `applicable_state_types`。表本身就是 LLM tool 描述来源,也是 F-006 tool bridge gate 的输入。新增 STS2MCP action = 表里加一行,不写新函数。
+- 提供 `dispatch(client, name, args)` 通用 runner;未知 action 抛 `KeyError`,STS2MCP 报错走 `ActionError` 路径。
+- 动作后由 `post_action_and_settle` 统一加一个短延时再 `get_state`,避免 end_turn 后读取到旧 hand;STS2MCP 本身同步响应,不做严格收敛轮询(真有 race 由 demo loop 触发后再加强)。
 - 超时或动作失败时记录 `logger.error(...)`,不静默吞掉异常。
-- 有 fixture 驱动测试覆盖典型 action 的请求/响应往返。
-- `slay2agent inspect` 能在 mod 运行时打印当前 state。
+- 有 fixture 驱动测试覆盖 schema 表完整性、`dispatch` 请求体、`actions_for_state` gate、schema → canonical `ToolSchema` 的渲染、以及 `slay2agent inspect` 在 mod-reachable 与 unreachable 两条路径上的行为。
+- `slay2agent inspect` 在 mod 运行时打印当前 state JSON;mod 不可达时打印错误并返回非零状态。
 
 ### F-004 State Parser & Compact View
 
