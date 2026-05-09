@@ -1,7 +1,9 @@
-"""Usage tracker: per-model token accumulation. No pricing.
+"""Usage tracker: per-(role, model) token accumulation. No pricing.
 
-Kept deliberately minimal — budget enforcement can be layered in ``record()``
-later if a run ever needs a hard token cap.
+Bucketing by ``(agent_role, model)`` is required so run summaries can split
+tokens across the three agents (main / skill_creator / oracle_updater) even
+when they share the same model slug — see F-002 acceptance #4 and the run
+summary requirement in F-005 / F-007.
 """
 
 from __future__ import annotations
@@ -9,21 +11,22 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from slay2agent.llm.protocol import Usage
+from slay2agent.llm.protocol import AgentRole, Usage
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class UsageTracker:
-    _buckets: dict[str, Usage] = field(default_factory=dict)
+    _buckets: dict[tuple[AgentRole, str], Usage] = field(default_factory=dict)
 
-    def record(self, model: str, usage: Usage) -> None:
-        bucket = self._buckets.setdefault(model, Usage())
+    def record(self, role: AgentRole, model: str, usage: Usage) -> None:
+        bucket = self._buckets.setdefault((role, model), Usage())
         bucket.input_tokens += usage.input_tokens
         bucket.output_tokens += usage.output_tokens
         logger.info(
-            "usage model=%s this=[in=%d out=%d] total=[in=%d out=%d]",
+            "usage role=%s model=%s this=[in=%d out=%d] total=[in=%d out=%d]",
+            role,
             model,
             usage.input_tokens,
             usage.output_tokens,
@@ -31,15 +34,30 @@ class UsageTracker:
             bucket.output_tokens,
         )
 
-    def snapshot(self) -> dict[str, dict[str, int]]:
-        return {
-            model: {
+    def snapshot(self) -> dict[str, dict[str, dict[str, int]]]:
+        """Nested view: ``{role: {model: {input, output, total}}}``."""
+        out: dict[str, dict[str, dict[str, int]]] = {}
+        for (role, model), u in self._buckets.items():
+            out.setdefault(role, {})[model] = {
                 "input": u.input_tokens,
                 "output": u.output_tokens,
                 "total": u.total,
             }
-            for model, u in self._buckets.items()
-        }
+        return out
+
+    def role_totals(self) -> dict[str, Usage]:
+        """Per-role aggregate across all models that role used.
+
+        Used by run summaries to report ``three agents x (input, output)``.
+        Roles never recorded against return ``Usage()`` zeros via the caller's
+        ``.get(role, Usage())`` — this method only includes seen roles.
+        """
+        agg: dict[str, Usage] = {}
+        for (role, _model), u in self._buckets.items():
+            target = agg.setdefault(role, Usage())
+            target.input_tokens += u.input_tokens
+            target.output_tokens += u.output_tokens
+        return agg
 
     def total(self) -> Usage:
         agg = Usage()

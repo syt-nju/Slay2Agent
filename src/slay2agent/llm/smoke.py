@@ -49,7 +49,7 @@ def _scenario_plain_text(adapter: OpenRouterAdapter, tracker: UsageTracker) -> b
             ]
         )
     )
-    tracker.record(resp.model, resp.usage)
+    tracker.record("main", resp.model, resp.usage)
     print(f"  model       = {resp.model}")
     print(f"  stop_reason = {resp.stop_reason}")
     print(f"  usage       = in={resp.usage.input_tokens} out={resp.usage.output_tokens}")
@@ -77,7 +77,7 @@ def _scenario_tool_call(adapter: OpenRouterAdapter, tracker: UsageTracker) -> bo
             tool_choice="required",
         )
     )
-    tracker.record(resp.model, resp.usage)
+    tracker.record("main", resp.model, resp.usage)
     print(f"  model       = {resp.model}")
     print(f"  stop_reason = {resp.stop_reason}")
     print(f"  usage       = in={resp.usage.input_tokens} out={resp.usage.output_tokens}")

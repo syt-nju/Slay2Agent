@@ -7,6 +7,7 @@ from slay2agent.llm.errors import (
 )
 from slay2agent.llm.openrouter import OpenRouterAdapter
 from slay2agent.llm.protocol import (
+    AgentRole,
     LLMAdapter,
     LLMResponse,
     Message,
@@ -18,6 +19,7 @@ from slay2agent.llm.retry import call_with_retry, jittered_backoff
 from slay2agent.llm.usage import UsageTracker
 
 __all__ = [
+    "AgentRole",
     "FatalError",
     "LLMAdapter",
     "LLMError",

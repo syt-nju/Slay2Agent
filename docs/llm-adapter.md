@@ -110,7 +110,8 @@ messages = [Message(role="system", content=SYS), Message(role="user", content=ta
 
 while True:
     resp = call_with_retry(lambda: adapter.chat(messages, tools=TOOLS))
-    tracker.record(resp.model, resp.usage)
+    # role 是上层语义 (main / skill_creator / oracle_updater),由 caller 传入。
+    tracker.record("main", resp.model, resp.usage)
     messages.append(resp.message)
     if resp.stop_reason != "tool_calls":
         break
@@ -220,24 +221,29 @@ def classify(exc: Exception) -> LLMError:
 
 ### 7.3 Usage 累计(`usage.py`)
 
-不算钱,只记 token:
+不算钱,只记 token。bucket key 是 `(agent_role, model)`,因为三类 agent 很可能共用同一个 model slug,只按 model 分会丢掉每个 agent 的拆分(F-002 acceptance #4 + F-005 / F-007 run summary 都依赖这个拆分)。
 
 ```python
+AgentRole = Literal["main", "skill_creator", "oracle_updater"]
+
 @dataclass
 class UsageTracker:
-    _buckets: dict[str, Usage] = field(default_factory=dict)   # key = "openrouter:<model>"
+    _buckets: dict[tuple[AgentRole, str], Usage] = field(default_factory=dict)
 
-    def record(self, model: str, usage: Usage) -> None:
-        """累加到对应桶。每次调用 logger.info 打印本次 + 累计。"""
+    def record(self, role: AgentRole, model: str, usage: Usage) -> None:
+        """累加到 (role, model) 桶。每次调用 logger.info 打印本次 + 累计。"""
 
-    def snapshot(self) -> dict[str, dict]:
-        """给 trace 日志用:{model: {input, output, total}}"""
+    def snapshot(self) -> dict[str, dict[str, dict[str, int]]]:
+        """{role: {model: {input, output, total}}},直接喂给 run summary。"""
+
+    def role_totals(self) -> dict[str, Usage]:
+        """{role: Usage},跨 model 合计,F-005 summary 三类 agent 总量字段。"""
 
     def total(self) -> Usage:
-        """全桶合计。"""
+        """全桶合计,debug 用。"""
 ```
 
-上层 orchestrator 持有一个 `UsageTracker` 实例,每次 `adapter.chat()` 返回后 `tracker.record(resp.model, resp.usage)`。
+`agent_role` 是 **上层语义**(谁在调 LLM),不是 adapter 概念。所以 `OpenRouterAdapter.chat()` 不接 `role` 入参——orchestrator / sub-agent runner 拿到 `LLMResponse` 后自己 `tracker.record(role, resp.model, resp.usage)`,避免把上层语义污染到 provider 适配层。
 
 **不做预算熔断**。如果后面真需要,加一个 `max_total_tokens` 配置在 `record()` 里判一下就行,5 行代码,不先做。
 
