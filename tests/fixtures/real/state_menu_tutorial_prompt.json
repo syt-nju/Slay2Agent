@@ -1,0 +1,15 @@
+{
+  "state_type": "menu",
+  "menu_screen": "tutorial_prompt",
+  "message": "Enable Tutorials? Choose yes or no.",
+  "options": [
+    {
+      "name": "no",
+      "enabled": true
+    },
+    {
+      "name": "yes",
+      "enabled": true
+    }
+  ]
+}

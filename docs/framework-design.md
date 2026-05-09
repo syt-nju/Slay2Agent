@@ -35,9 +35,9 @@ Game HTTP Client (STS2MCP REST)
 
 ### State Parser
 
-`src/slay2agent/game/schema.py`(待建):把 raw JSON 按 `state_type` 分发到对应解析路径,产出供 prompt 使用的 *compact view*。技术栈不绑定;dataclass 或 pydantic 任选,只要稳定输入输出 + 可测试。
+`src/slay2agent/game/schema.py`:把 raw JSON 按 `state_type` 分发到对应解析路径,产出供 prompt 使用的 *compact view*。实现使用 `@dataclass(frozen=True, slots=True)`(不新增依赖,与 `action_schemas.py` 风格一致),按 `state_type` 提供专用 view 类(`MenuView` / `CombatView` / `HandSelectView` / `MapView` / `EventView` / `RewardsView` / `CardRewardView` / `CardSelectView` / `GameOverView`)+ `UnknownView` fallback;`menu` 内部按 `menu_screen` 二次分发但仍走 `MenuView`。
 
-`to_compact_prompt(state)` 是策略侧的唯一入口,token 预算可控。
+`to_compact_prompt(state)` 是策略侧的唯一入口,每个 view 单独渲染,默认抑制牌堆全文/远端 map 节点/已 chosen 事件项等高 token 区域,从而把 prompt 体量约束在设计层而非靠运行时截断。
 
 ### LLM Adapter
 
@@ -172,3 +172,5 @@ run termination
 - loop_detector 的 `window_size=10` / `repeat_threshold=4` 默认是否合适。
 - 是否允许主 agent 在 prompt 里以 "thought" 段方式 reason 后再 tool call。
 - skill creator 是否改为限时异步(首版同步阻塞)。
+- 暂未收集 fixture 的 `state_type`(`rest_site` / `shop` / `fake_merchant` / `treasure` / `bundle_select` / `relic_select` / `crystal_sphere` / `boss`)是否要在 F-004 内补齐专用 view —— 首版统一走 `UnknownView` fallback,等 demo loop 跑出真实样本后再补。
+

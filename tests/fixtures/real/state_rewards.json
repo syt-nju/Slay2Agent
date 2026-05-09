@@ -1,0 +1,50 @@
+{
+  "state_type": "rewards",
+  "rewards": {
+    "items": [
+      {
+        "index": 0,
+        "type": "gold",
+        "description": "20 Gold",
+        "gold_amount": 20
+      },
+      {
+        "index": 1,
+        "type": "card",
+        "description": "Add a card to your deck."
+      }
+    ],
+    "can_proceed": true
+  },
+  "run": {
+    "act": 1,
+    "floor": 2,
+    "ascension": 0
+  },
+  "player": {
+    "character": "The Silent",
+    "hp": 64,
+    "max_hp": 70,
+    "block": 0,
+    "gold": 99,
+    "status": [],
+    "relics": [
+      {
+        "id": "RING_OF_THE_SNAKE",
+        "name": "Ring of the Snake",
+        "description": "At the start of each combat, draw 2 additional cards.",
+        "counter": null,
+        "keywords": []
+      },
+      {
+        "id": "LEAD_PAPERWEIGHT",
+        "name": "Lead Paperweight",
+        "description": "Upon pickup, choose 1 of 2 Colorless cards to add to your Deck.",
+        "counter": null,
+        "keywords": []
+      }
+    ],
+    "potions": [],
+    "max_potion_slots": 3
+  }
+}

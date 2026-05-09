@@ -1,0 +1,69 @@
+{
+  "state_type": "event",
+  "event": {
+    "event_id": "NEOW",
+    "event_name": "Neow",
+    "is_ancient": true,
+    "in_dialogue": false,
+    "body": null,
+    "options": [
+      {
+        "index": 0,
+        "title": "Lead Paperweight",
+        "description": "Choose 1 of 2 Colorless cards to add to your Deck.",
+        "is_locked": false,
+        "is_proceed": false,
+        "was_chosen": false,
+        "relic_name": "Lead Paperweight",
+        "relic_description": "Upon pickup, choose 1 of 2 Colorless cards to add to your Deck.",
+        "keywords": []
+      },
+      {
+        "index": 1,
+        "title": "Arcane Scroll",
+        "description": "Obtain a random Rare Card.",
+        "is_locked": false,
+        "is_proceed": false,
+        "was_chosen": false,
+        "relic_name": "Arcane Scroll",
+        "relic_description": "Upon pickup, obtain a random Rare Card to add to your Deck.",
+        "keywords": []
+      },
+      {
+        "index": 2,
+        "title": "Silver Crucible",
+        "description": "The first 3 card rewards you see are Upgraded. The first Treasure Chest you open is empty.",
+        "is_locked": false,
+        "is_proceed": false,
+        "was_chosen": false,
+        "relic_name": "Silver Crucible",
+        "relic_description": "The first 3 card rewards you see are Upgraded. The first Treasure Chest you open is empty.",
+        "keywords": []
+      }
+    ]
+  },
+  "run": {
+    "act": 1,
+    "floor": 1,
+    "ascension": 0
+  },
+  "player": {
+    "character": "The Silent",
+    "hp": 70,
+    "max_hp": 70,
+    "block": 0,
+    "gold": 99,
+    "status": [],
+    "relics": [
+      {
+        "id": "RING_OF_THE_SNAKE",
+        "name": "Ring of the Snake",
+        "description": "At the start of each combat, draw 2 additional cards.",
+        "counter": null,
+        "keywords": []
+      }
+    ],
+    "potions": [],
+    "max_potion_slots": 3
+  }
+}

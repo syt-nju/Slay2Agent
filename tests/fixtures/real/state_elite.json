@@ -1,0 +1,149 @@
+{
+  "state_type": "elite",
+  "battle": {
+    "round": 1,
+    "turn": "player",
+    "is_play_phase": false,
+    "enemies": [
+      {
+        "entity_id": "BYRDONIS_0",
+        "combat_id": 1,
+        "name": "Byrdonis",
+        "hp": 83,
+        "max_hp": 83,
+        "block": 0,
+        "status": [
+          {
+            "id": "TERRITORIAL_POWER",
+            "name": "Territorial",
+            "amount": 1,
+            "type": "Buff",
+            "description": "At the end of its turn, gains 1 Strength.",
+            "keywords": []
+          }
+        ],
+        "intents": [
+          {
+            "type": "Attack",
+            "label": "17",
+            "title": "Aggressive",
+            "description": "This enemy intends to Attack for 17 damage."
+          }
+        ]
+      }
+    ]
+  },
+  "run": {
+    "act": 1,
+    "floor": 7,
+    "ascension": 0
+  },
+  "player": {
+    "character": "The Silent",
+    "hp": 60,
+    "max_hp": 77,
+    "block": 0,
+    "energy": 0,
+    "max_energy": 3,
+    "hand": [],
+    "draw_pile_count": 12,
+    "discard_pile_count": 0,
+    "exhaust_pile_count": 0,
+    "draw_pile": [
+      {
+        "name": "Defend",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Gain 5 Block."
+      },
+      {
+        "name": "Defend",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Gain 5 Block."
+      },
+      {
+        "name": "Defend",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Gain 5 Block."
+      },
+      {
+        "name": "Defend",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Gain 5 Block."
+      },
+      {
+        "name": "Defend",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Gain 5 Block."
+      },
+      {
+        "name": "Neutralize",
+        "cost": "0",
+        "star_cost": null,
+        "description": "Deal 3 damage. Apply 1 Weak."
+      },
+      {
+        "name": "Strike",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Deal 6 damage."
+      },
+      {
+        "name": "Strike",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Deal 6 damage."
+      },
+      {
+        "name": "Strike",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Deal 6 damage."
+      },
+      {
+        "name": "Strike",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Deal 6 damage."
+      },
+      {
+        "name": "Survivor",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Gain 8 Block. Discard 1 card."
+      },
+      {
+        "name": "Peck",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Deal 2 damage 3 times."
+      }
+    ],
+    "discard_pile": [],
+    "exhaust_pile": [],
+    "gold": 150,
+    "status": [],
+    "relics": [
+      {
+        "id": "RING_OF_THE_SNAKE",
+        "name": "Ring of the Snake",
+        "description": "At the start of each combat, draw 2 additional cards.",
+        "counter": null,
+        "keywords": []
+      },
+      {
+        "id": "LEAD_PAPERWEIGHT",
+        "name": "Lead Paperweight",
+        "description": "Upon pickup, choose 1 of 2 Colorless cards to add to your Deck.",
+        "counter": null,
+        "keywords": []
+      }
+    ],
+    "potions": [],
+    "max_potion_slots": 3
+  }
+}

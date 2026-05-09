@@ -1,0 +1,23 @@
+{
+  "state_type": "menu",
+  "menu_screen": "singleplayer",
+  "message": "Select game mode.",
+  "options": [
+    {
+      "name": "standard",
+      "enabled": true
+    },
+    {
+      "name": "daily",
+      "enabled": false
+    },
+    {
+      "name": "custom",
+      "enabled": false
+    },
+    {
+      "name": "back",
+      "enabled": true
+    }
+  ]
+}

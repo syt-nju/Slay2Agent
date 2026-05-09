@@ -1,0 +1,193 @@
+{
+  "state_type": "menu",
+  "menu_screen": "character_select",
+  "message": "Select a character.",
+  "characters": [
+    {
+      "name": "The Ironclad",
+      "id": "IRONCLAD",
+      "locked": false,
+      "hp": 80,
+      "gold": 99,
+      "energy": 3,
+      "description": "Ironclad cards will now appear in rewards and shops.",
+      "starting_relics": [
+        {
+          "name": "Burning Blood",
+          "description": "At the end of combat, heal 6 HP."
+        }
+      ],
+      "starting_deck": [
+        "Strike",
+        "Strike",
+        "Strike",
+        "Strike",
+        "Strike",
+        "Defend",
+        "Defend",
+        "Defend",
+        "Defend",
+        "Bash"
+      ],
+      "total_cards": 87,
+      "total_relics": 8,
+      "total_potions": 3
+    },
+    {
+      "name": "The Silent",
+      "id": "SILENT",
+      "locked": true,
+      "hp": 70,
+      "gold": 99,
+      "energy": 3,
+      "description": "Silent cards will now appear in rewards and shops.",
+      "starting_relics": [
+        {
+          "name": "Ring of the Snake",
+          "description": "At the start of each combat, draw 2 additional cards."
+        }
+      ],
+      "starting_deck": [
+        "Strike",
+        "Strike",
+        "Strike",
+        "Strike",
+        "Strike",
+        "Defend",
+        "Defend",
+        "Defend",
+        "Defend",
+        "Defend",
+        "Neutralize",
+        "Survivor"
+      ],
+      "total_cards": 88,
+      "total_relics": 8,
+      "total_potions": 3
+    },
+    {
+      "name": "The Regent",
+      "id": "REGENT",
+      "locked": true,
+      "hp": 75,
+      "gold": 99,
+      "energy": 3,
+      "description": "Regent cards will now appear in rewards and shops.",
+      "starting_relics": [
+        {
+          "name": "Divine Right",
+          "description": "At the start of each combat, gain [star_icon.png][star_icon.png][star_icon.png]."
+        }
+      ],
+      "starting_deck": [
+        "Strike",
+        "Strike",
+        "Strike",
+        "Strike",
+        "Defend",
+        "Defend",
+        "Defend",
+        "Defend",
+        "Falling Star",
+        "Venerate"
+      ],
+      "total_cards": 88,
+      "total_relics": 8,
+      "total_potions": 3
+    },
+    {
+      "name": "The Necrobinder",
+      "id": "NECROBINDER",
+      "locked": true,
+      "hp": 66,
+      "gold": 99,
+      "energy": 3,
+      "description": "Necrobinder cards will now appear in rewards and shops.",
+      "starting_relics": [
+        {
+          "name": "Bound Phylactery",
+          "description": "At the start of your turn, Summon 1."
+        }
+      ],
+      "starting_deck": [
+        "Strike",
+        "Strike",
+        "Strike",
+        "Strike",
+        "Defend",
+        "Defend",
+        "Defend",
+        "Defend",
+        "Bodyguard",
+        "Unleash"
+      ],
+      "total_cards": 88,
+      "total_relics": 8,
+      "total_potions": 3
+    },
+    {
+      "name": "The Defect",
+      "id": "DEFECT",
+      "locked": true,
+      "hp": 75,
+      "gold": 99,
+      "energy": 3,
+      "description": "Defect cards will now appear in rewards and shops.",
+      "starting_relics": [
+        {
+          "name": "Cracked Core",
+          "description": "At the start of each combat, Channel 1 Lightning."
+        }
+      ],
+      "starting_deck": [
+        "Strike",
+        "Strike",
+        "Strike",
+        "Strike",
+        "Defend",
+        "Defend",
+        "Defend",
+        "Defend",
+        "Zap",
+        "Dualcast"
+      ],
+      "total_cards": 88,
+      "total_relics": 8,
+      "total_potions": 3
+    }
+  ],
+  "options": [
+    {
+      "name": "IRONCLAD",
+      "enabled": true
+    },
+    {
+      "name": "SILENT",
+      "enabled": false
+    },
+    {
+      "name": "REGENT",
+      "enabled": false
+    },
+    {
+      "name": "NECROBINDER",
+      "enabled": false
+    },
+    {
+      "name": "DEFECT",
+      "enabled": false
+    },
+    {
+      "name": "confirm",
+      "enabled": true
+    },
+    {
+      "name": "embark",
+      "enabled": true
+    },
+    {
+      "name": "back",
+      "enabled": true
+    }
+  ]
+}

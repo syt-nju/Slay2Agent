@@ -13,7 +13,7 @@ Execution Mode(除非 memory 设计需要再次重审,届时回 Design Mode)。
 
 1. F-002 LLM Adapter ✅(已实施,UsageTracker 按 `(role, model)` 分桶)
 2. F-003 Game Communication Path ✅(已实施 client + 28-action 声明式 schema 表 + dispatch + state-type gate + fixtures)
-3. F-004 State Parser & Compact View
+3. F-004 State Parser & Compact View ✅(`schema.py` dataclass-based parse + per-view to_compact_prompt;14 fixtures + unknown fallback 全绿)
 4. F-005 Phase 1 Demo Loop
 5. F-006 Tool Bridge & Loop Detector
 6. F-007 Trace & Token Accounting
@@ -29,7 +29,7 @@ F-005 / F-006 / F-007 互相耦合,会在同一个 phase 内推进:demo loop 走
 - [x] F-003 GameClient + 28-action 声明式 schema 表(`ACTION_SCHEMAS`)+ `dispatch` + `actions_for_state`(F-006 gate 直接消费)+ `to_tool_schema`(LLM tool 描述来源)+ fixture 驱动测试 + `slay2agent inspect`
 - [x] `tests/fixtures/real/` 已收集 14 个真实 STS2MCP state 样本
 - [x] `vendor/sts2mcp-docs/` 已就位
-- [ ] F-004 State Parser & compact view
+- [x] F-004 State Parser & compact view(`schema.py`,dataclass + per-state-type 渲染器 + UnknownView fallback)
 - [ ] F-005 Phase 1 demo loop(main_menu → game_over)
 - [ ] F-006 Tool Bridge + Loop Detector
 - [ ] F-007 Trace + Token Accounting
@@ -42,17 +42,16 @@ F-005 / F-006 / F-007 互相耦合,会在同一个 phase 内推进:demo loop 走
 - [x] CLI / config / `.env.example` / README 前置条件
 - [x] STS2MCP 通路打通 + 真实 fixtures 收集
 
-## Phase 1 — State Parser & Compact View (F-004)
+## Phase 1 — State Parser & Compact View (F-004) ✅
 
-- [ ] 选定解析方案(dataclass 或 pydantic),记录在 framework-design 的 deferred decisions 一节
-- [ ] 按 `state_type` 分发解析,覆盖 14 个真实 fixtures 中已知类型
-- [ ] 实现 `to_compact_prompt(state)`,token 预算可控
-- [ ] fixture 解析测试 + 未知 `state_type` 的 fallback 测试
+- [x] 选定解析方案:**dataclass**(`@dataclass(frozen=True)`,无新增依赖,与 `action_schemas.py` 风格一致),已记录在 framework-design 的 State Parser 一节。
+- [x] 按 `state_type` 分发:`menu` / `monster` / `elite` / `boss` / `hand_select` / `map` / `event` / `rewards` / `card_reward` / `card_select` / `game_over`,其余走 `UnknownView` fallback。
+- [x] `to_compact_prompt(state)` 按 view 分别渲染,默认抑制牌堆全文 / 远端 map 节点 / 已 chosen 事件项;实测 14 个 fixture 输出长度 < 700 字符,设计层 token 上限 4000 字符。
+- [x] fixture 解析测试 + 未知 `state_type` 的 fallback 测试(`tests/test_state_schema.py`,47/47 绿)。
 
-Expected verification:
+未来扩展(在 demo loop 跑出真实样本后再补,F-004 不阻断):
 
-- 14 个真实 fixtures 全部能被解析为 compact view
-- compact view 字符串长度可控且包含主 agent 决策必需信息
+- 暂未收集 fixture 的 `rest_site` / `shop` / `fake_merchant` / `treasure` / `bundle_select` / `relic_select` / `crystal_sphere` / `boss` 默认走 `UnknownView`;F-005 demo loop 验证时若被频繁踩到再补专用 view。
 
 ## Phase 2 — Demo Loop + Tool Bridge + Trace (F-005 / F-006 / F-007)
 

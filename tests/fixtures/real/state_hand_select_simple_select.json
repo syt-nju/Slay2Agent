@@ -1,0 +1,247 @@
+{
+  "state_type": "hand_select",
+  "hand_select": {
+    "mode": "simple_select",
+    "prompt": "Choose a card to Discard.",
+    "cards": [
+      {
+        "id": "NEUTRALIZE",
+        "name": "Neutralize",
+        "type": "Attack",
+        "cost": "0",
+        "star_cost": null,
+        "description": "Deal 3 damage. Apply 1 Weak.",
+        "rarity": "Basic",
+        "is_upgraded": false,
+        "keywords": [
+          {
+            "name": "Weak",
+            "description": "Weakened creatures deal 25% less damage with Attacks."
+          }
+        ],
+        "index": 0
+      },
+      {
+        "id": "STRIKE_SILENT",
+        "name": "Strike",
+        "type": "Attack",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Deal 6 damage.",
+        "rarity": "Basic",
+        "is_upgraded": false,
+        "keywords": [],
+        "index": 1
+      },
+      {
+        "id": "DEFEND_SILENT",
+        "name": "Defend",
+        "type": "Skill",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Gain 5 Block.",
+        "rarity": "Basic",
+        "is_upgraded": false,
+        "keywords": [
+          {
+            "name": "Block",
+            "description": "Until next turn, prevents damage."
+          }
+        ],
+        "index": 2
+      },
+      {
+        "id": "STRIKE_SILENT",
+        "name": "Strike",
+        "type": "Attack",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Deal 6 damage.",
+        "rarity": "Basic",
+        "is_upgraded": false,
+        "keywords": [],
+        "index": 3
+      }
+    ],
+    "can_confirm": false
+  },
+  "battle": {
+    "round": 1,
+    "turn": "player",
+    "is_play_phase": true,
+    "enemies": [
+      {
+        "entity_id": "NIBBIT_0",
+        "combat_id": 1,
+        "name": "Nibbit",
+        "hp": 30,
+        "max_hp": 42,
+        "block": 0,
+        "status": [],
+        "intents": [
+          {
+            "type": "Attack",
+            "label": "12",
+            "title": "Aggressive",
+            "description": "This enemy intends to Attack for 12 damage."
+          }
+        ]
+      }
+    ]
+  },
+  "run": {
+    "act": 1,
+    "floor": 2,
+    "ascension": 0
+  },
+  "player": {
+    "character": "The Silent",
+    "hp": 70,
+    "max_hp": 70,
+    "block": 8,
+    "energy": 0,
+    "max_energy": 3,
+    "hand": [
+      {
+        "id": "NEUTRALIZE",
+        "name": "Neutralize",
+        "type": "Attack",
+        "cost": "0",
+        "star_cost": null,
+        "description": "Deal 3 damage. Apply 1 Weak.",
+        "rarity": "Basic",
+        "is_upgraded": false,
+        "keywords": [
+          {
+            "name": "Weak",
+            "description": "Weakened creatures deal 25% less damage with Attacks."
+          }
+        ],
+        "index": 0,
+        "target_type": "AnyEnemy",
+        "can_play": true,
+        "unplayable_reason": null
+      },
+      {
+        "id": "STRIKE_SILENT",
+        "name": "Strike",
+        "type": "Attack",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Deal 6 damage.",
+        "rarity": "Basic",
+        "is_upgraded": false,
+        "keywords": [],
+        "index": 1,
+        "target_type": "AnyEnemy",
+        "can_play": false,
+        "unplayable_reason": "EnergyCostTooHigh"
+      },
+      {
+        "id": "DEFEND_SILENT",
+        "name": "Defend",
+        "type": "Skill",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Gain 5 Block.",
+        "rarity": "Basic",
+        "is_upgraded": false,
+        "keywords": [
+          {
+            "name": "Block",
+            "description": "Until next turn, prevents damage."
+          }
+        ],
+        "index": 2,
+        "target_type": "Self",
+        "can_play": false,
+        "unplayable_reason": "EnergyCostTooHigh"
+      },
+      {
+        "id": "STRIKE_SILENT",
+        "name": "Strike",
+        "type": "Attack",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Deal 6 damage.",
+        "rarity": "Basic",
+        "is_upgraded": false,
+        "keywords": [],
+        "index": 3,
+        "target_type": "AnyEnemy",
+        "can_play": false,
+        "unplayable_reason": "EnergyCostTooHigh"
+      }
+    ],
+    "draw_pile_count": 5,
+    "discard_pile_count": 2,
+    "exhaust_pile_count": 0,
+    "draw_pile": [
+      {
+        "name": "Defend",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Gain 5 Block."
+      },
+      {
+        "name": "Defend",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Gain 5 Block."
+      },
+      {
+        "name": "Defend",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Gain 5 Block."
+      },
+      {
+        "name": "Defend",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Gain 5 Block."
+      },
+      {
+        "name": "Strike",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Deal 6 damage."
+      }
+    ],
+    "discard_pile": [
+      {
+        "name": "Strike",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Deal 6 damage."
+      },
+      {
+        "name": "Strike",
+        "cost": "1",
+        "star_cost": null,
+        "description": "Deal 6 damage."
+      }
+    ],
+    "exhaust_pile": [],
+    "gold": 99,
+    "status": [],
+    "relics": [
+      {
+        "id": "RING_OF_THE_SNAKE",
+        "name": "Ring of the Snake",
+        "description": "At the start of each combat, draw 2 additional cards.",
+        "counter": null,
+        "keywords": []
+      },
+      {
+        "id": "LEAD_PAPERWEIGHT",
+        "name": "Lead Paperweight",
+        "description": "Upon pickup, choose 1 of 2 Colorless cards to add to your Deck.",
+        "counter": null,
+        "keywords": []
+      }
+    ],
+    "potions": [],
+    "max_potion_slots": 3
+  }
+}

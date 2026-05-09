@@ -1,0 +1,11 @@
+{
+    "state_type": "menu",
+    "menu_screen": "main",
+    "message": "Main menu.",
+    "options": [
+        "singleplayer",
+        "multiplayer",
+        "settings",
+        "quit"
+    ]
+}

@@ -1,0 +1,28 @@
+{
+  "state_type": "unknown",
+  "room_type": null,
+  "run": {
+    "act": 1,
+    "floor": 0,
+    "ascension": 0
+  },
+  "player": {
+    "character": "The Ironclad",
+    "hp": 80,
+    "max_hp": 80,
+    "block": 0,
+    "gold": 99,
+    "status": [],
+    "relics": [
+      {
+        "id": "BURNING_BLOOD",
+        "name": "Burning Blood",
+        "description": "At the end of combat, heal 6 HP.",
+        "counter": null,
+        "keywords": []
+      }
+    ],
+    "potions": [],
+    "max_potion_slots": 3
+  }
+}
