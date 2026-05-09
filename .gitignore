@@ -13,3 +13,6 @@ __pycache__/
 
 # Secrets
 .env
+
+# Local-only references (mod docs, scratch, etc.)
+vendor/

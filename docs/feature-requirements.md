@@ -70,7 +70,7 @@ slay2agent 是一个**研究型 testbed**,用于探索"什么样的 memory 与 c
 
 ### F-004 State Parser & Compact View
 
-**Status:** planned
+**Status:** implemented
 
 系统需要把原始 JSON state 转换为策略层和 prompt 层都稳定可依赖的视图。技术选型不进入需求,只要求 *输入稳定 / 输出可压缩 / 可被测试*。
 
