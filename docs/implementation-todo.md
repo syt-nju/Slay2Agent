@@ -4,167 +4,142 @@
 
 ## Current Mode
 
-Execution Mode.
+Execution Mode(除非 memory 设计需要再次重审,届时回 Design Mode)。
 
-已确认从 F-001 开始按 feature 顺序推进。F-003 起需要 STS2MCP 实例或样本,目前用户侧暂未提供,届时会先暂停等待。
+阶段一目标:跑出"main menu → 一局 `game_over`"的端到端 demo loop,期间 memory 系统从空 skill / 空 oracle 起步。
+阶段二目标:启用 skill creator / oracle updater 两个 sub-agent,在跑通的 demo loop 上开始 memory 设计的纵向迭代。
 
 ## Feature Order
 
-建议执行顺序:
+1. F-002 LLM Adapter ✅(已实施 OpenRouter baseline)
+2. F-003 Game Communication Path ✅(已实施 client + 9 actions + fixtures)
+3. F-004 State Parser & Compact View
+4. F-005 Phase 1 Demo Loop
+5. F-006 Tool Bridge & Loop Detector
+6. F-007 Trace & Token Accounting
+7. F-008a Skill Registry + Read Tool
+8. F-008b Skill Creator Sub-agent
+9. F-008c Oracle Updater Sub-agent
 
-1. F-001 Runtime Boundary and Configuration
-2. F-002 LLM Adapter
-3. F-003 Game Communication Path
-4. F-004 State and Action Domain Model
-5. F-005 Minimal Runnable Agent Loop
-6. F-006 Skill Routing and Tool Bridge
-7. F-007 Trace, Metrics, and Baseline Evaluation
-8. F-008 Memory and Reflect Improvement Loop
-9. F-009 Deferred Extensions
+F-005 / F-006 / F-007 互相耦合,会在同一个 phase 内推进:demo loop 走通必须有 tool bridge + trace。F-008a 是 F-008b/c 的硬前置(没有 skill 文件结构,sub-agent 无处写)。
 
 ## Progress Summary
 
-- [x] F-002 OpenRouter baseline implemented.
-- [x] F-002 retry, usage, error classification, smoke entry implemented.
-- [x] F-001 unified CLI + Config + STS2MCP env placeholder + README prerequisites.
-- [x] F-003 GameClient (get_state / post_action / settle) + 9 action wrappers + fixture-driven tests + functional `slay2agent inspect`.
-- [ ] F-004 State schema and compact prompt.
-- [ ] F-005 Minimal Agent loop.
-- [ ] F-006 Skill router and tool bridge.
-- [ ] F-007 Trace and baseline metrics.
-- [ ] F-008 Memory and Reflect loop.
+- [x] F-002 OpenRouter baseline + retry + usage + smoke entry
+- [x] F-003 GameClient + 9 action wrappers + fixture-driven tests + `slay2agent inspect`
+- [x] `tests/fixtures/real/` 已收集 14 个真实 STS2MCP state 样本
+- [x] `vendor/sts2mcp-docs/` 已就位
+- [ ] F-004 State Parser & compact view
+- [ ] F-005 Phase 1 demo loop(main_menu → game_over)
+- [ ] F-006 Tool Bridge + Loop Detector
+- [ ] F-007 Trace + Token Accounting
+- [ ] F-008a Skill Registry + Read Tool
+- [ ] F-008b Skill Creator Sub-agent
+- [ ] F-008c Oracle Updater Sub-agent
 
-## Phase 0 - Requirements and Harness Docs
+## Phase 0 — Setup (done)
 
-- [x] Confirm final goal: runnable baseline first, memory-driven improvement second.
-- [x] Confirm scope: STS2MCP JSON/REST only, cloud LLM only.
-- [x] Re-split feature list using hybrid feature + milestone structure.
-- [x] Create `docs/feature-requirements.md`.
-- [x] Create `docs/framework-design.md`.
-- [x] Create `docs/implementation-todo.md`.
+- [x] CLI / config / `.env.example` / README 前置条件
+- [x] STS2MCP 通路打通 + 真实 fixtures 收集
 
-## Phase 1 - Runtime Boundary and Existing LLM Baseline
+## Phase 1 — State Parser & Compact View (F-004)
 
-Linked features: F-001, F-002
-
-- [x] Review `.env.example`, README, and CLI entrypoint against F-001.
-- [x] Add `src/slay2agent/config.py` (LLMConfig + GameConfig, env-driven, no GPU).
-- [x] Add `src/slay2agent/cli.py` with `config` / `smoke` / `inspect` / `run` subcommands.
-- [x] Register `slay2agent` console script via pyproject; wire `main.py` to it.
-- [x] Document STS2MCP / LLM prerequisites in README; drop dangling `plan.md` reference.
-- [x] Add `STS2MCP_BASE_URL` / `STS2MCP_TIMEOUT` placeholders in `.env.example`.
-- [x] Verify no secrets or local-only files are staged for commit.
-- [x] Run offline tests (53 passed).
-- [ ] Run OpenRouter smoke only when API credentials are available (manual, deferred to user).
-
-Verification:
-
-- Offline tests for LLM adapter and config/CLI all pass.
-- `slay2agent --help` and `slay2agent config` work end-to-end with masked secrets.
-- Documentation makes runtime boundary clear (LLM cloud only, STS2MCP REST only, no GPU).
-
-## Phase 2 - Game Communication Path
-
-Linked feature: F-003
-
-- [x] Confirm STS2MCP REST endpoints (singleplayer GET/POST `/api/v1/singleplayer`, default port 15526).
-- [x] Add `src/slay2agent/game/client.py` (`GameClient`, `GameHTTPError`, `ActionError`, `post_action_and_settle`).
-- [x] Add `src/slay2agent/game/actions.py` (9 wrappers: combat, map, event, rewards, menu).
-- [x] Add 7 fixtures (5 state types + ok/error action responses).
-- [x] Add tests covering 9 actions + get_state + settle + HTTP/JSON/action error paths.
-- [x] Wire `slay2agent inspect` (and `--health`) to `GameClient`.
-- [x] Settle integrated into action wrappers via `post_action_and_settle`.
-- [x] Run fixture tests (69 passing total).
-- [ ] Manually run mod reachability smoke when local game/mod is available (deferred to user; needs game running).
-
-Verification:
-
-- Fixture tests pass; `slay2agent inspect` reaches STS2MCP, returns JSON state, and surfaces clear errors when the mod is down.
-- Action wrappers send STS2MCP-shaped JSON bodies, drop optional `None` params, and surface mod-side errors as `ActionError`.
-
-## Phase 3 - State and Action Domain Model
-
-Linked feature: F-004
-
-- [ ] Add pydantic dependency if not already present.
-- [ ] Add `src/slay2agent/game/schema.py`.
-- [ ] Model known `state_type` variants from STS2MCP samples.
-- [ ] Add domain objects for cards, enemies, relics, potions, and map nodes as needed.
-- [ ] Implement `to_compact_prompt()`.
-- [ ] Add fixture parse tests for known state types.
-- [ ] Keep `diff(prev)` deferred unless needed by compact prompt.
+- [ ] 选定解析方案(dataclass 或 pydantic),记录在 framework-design 的 deferred decisions 一节
+- [ ] 按 `state_type` 分发解析,覆盖 14 个真实 fixtures 中已知类型
+- [ ] 实现 `to_compact_prompt(state)`,token 预算可控
+- [ ] fixture 解析测试 + 未知 `state_type` 的 fallback 测试
 
 Expected verification:
 
-- Fixture parse tests pass.
-- Strategy-facing code can consume typed state objects without raw dict access.
+- 14 个真实 fixtures 全部能被解析为 compact view
+- compact view 字符串长度可控且包含主 agent 决策必需信息
 
-## Phase 4 - Minimal Runnable Agent
+## Phase 2 — Demo Loop + Tool Bridge + Trace (F-005 / F-006 / F-007)
 
-Linked features: F-005, F-006
+这三个 feature 同步推进,任何一项缺失都不能验证另外两项。
 
-- [ ] Add agent DTOs.
-- [ ] Add Perceive -> Execute -> Finalize orchestrator.
-- [ ] Add skill base class and state_type router.
-- [ ] Add combat/map/event/rewards/fallback skills.
-- [ ] Add tool bridge gate.
-- [ ] Add pre_execute validation for common invalid actions.
-- [ ] Add loop_detector for repeated `(action, args)`.
-- [ ] Add minimal JSONL trace writer.
-- [ ] Run unit tests for router, bridge, and loop detector.
-- [ ] Run a manual complete game session when STS2MCP and game are available.
+### F-006 Tool Bridge & Loop Detector
 
-Expected verification:
+- [ ] 按 `state_type` 决定可见 game tool 集合(gate)
+- [ ] loop detector(最近 N 步同 `(action, args)` 重复达阈值 → 终止)
+- [ ] gate 收窄 / loop 触发 / loop 未触发 三类单元测试
 
-- Agent can run from current game state to terminal run state.
-- Trace file is non-empty and can be manually reviewed.
+### F-007 Trace & Token Accounting
 
-## Phase 5 - Trace, Metrics, and Baseline
+- [ ] `runs/<run_id>/steps.jsonl` 写入器(主 agent 每步一行)
+- [ ] `runs/<run_id>/subagent.jsonl` 写入器(F-008b/c 才会用,先把接口暴露好)
+- [ ] LLM adapter 增加 `agent_role` 入参,token usage 按 `(role, model)` 分桶
+- [ ] `runs/<run_id>/summary.json`(终止原因 + 三类 agent token 拆分 + 调用次数)
 
-Linked feature: F-007
+### F-005 Phase 1 Demo Loop
 
-- [ ] Define baseline run metadata.
-- [ ] Add run-level metrics.
-- [ ] Add token aggregation per run and per combat turn.
-- [ ] Add simple report command or script.
-- [ ] Capture baseline before memory changes.
-- [ ] Decide minimum number of baseline runs.
+- [ ] `slay2agent play` 入口(配置文件指定角色 / ascension,默认 Ironclad + A0)
+- [ ] menu / character_select / ascension / singleplayer 各 `state_type` 的 navigation 逻辑(可在主 agent prompt 里简单引导,无需独立 skill)
+- [ ] `state_type` 切换时显式清空 L0
+- [ ] system prompt 注入空 skill metadata 列表 + 空 `oracle.md`(F-008 之前为空字符串占位)
+- [ ] 死循环 / `game_over` 触发 run 终止 + summary 写盘
 
 Expected verification:
 
-- Baseline report exists before F-008 starts.
-- Metrics are sufficient to compare memory-enabled runs against baseline.
+- 一次完整 run 能从 main_menu 跑到 `game_over` 或死循环终止
+- `runs/<run_id>/summary.json` 包含三类 agent token 字段(此时 sub_agent 部分为 0)
+- trace 内容可人工复盘:能看到每步 `state_type`、注入内容、LLM 调用、tool 调用、settle 后 state
 
-## Phase 6 - Memory and Reflect Improvement Loop
+## Phase 3 — Skill-based Memory v0 (F-008a / F-008b / F-008c)
 
-Linked feature: F-008
+启动该 phase 之前**必须先创建** `docs/memory-iteration-log.md`,首条 entry 为 v0 设计描述。
 
-- [ ] Decide memory storage format.
-- [ ] Add memory read/write interface.
-- [ ] Add skill-local playbook format.
-- [ ] Add Reflect stage to produce experience records.
-- [ ] Add Plan stage to consume memory/playbook.
-- [ ] Add tests for memory retrieval and update behavior.
-- [ ] Run memory-enabled sessions.
-- [ ] Compare against F-007 baseline.
-- [ ] Record whether improvement is observed.
+### F-008a Skill Registry + Read Tool
+
+- [ ] 定义 skill 文件格式(frontmatter metadata + markdown body)
+- [ ] `agent_state/skills/` + `agent_state/oracle.md` 读取层
+- [ ] 主 agent 暴露 `list_skills()` / `read_skill(id)` 两个 memory tool
+- [ ] system prompt 注入:全部 skill metadata + `oracle.md` 全文
+- [ ] 接受 skill 库为空 / oracle 为空时主 agent 仍可正常决策
+
+### F-008b Skill Creator Sub-agent
+
+- [ ] 抽取 sub-agent runner(LLM adapter / tool dispatch / token tracker / trace writer 复用)
+- [ ] `state_type` 切换边界触发 skill creator
+- [ ] sub-agent prompt 强制"先 list + read 匹配相似 skill,再决定 write / extend / merge / delete / no-op"
+- [ ] 工具集:`list_skills` / `read_skill` / `write_skill` / `delete_skill`
+- [ ] 失败 / 超时不阻断主 agent 推理,记录 `logger.error(...)`
+- [ ] 写 `subagent.jsonl`
+
+### F-008c Oracle Updater Sub-agent
+
+- [ ] run 结束(`game_over` 或死循环终止)触发
+- [ ] 输入装配:整局 trace + 该局 skill creator reasoning 摘要 + 上一版 `oracle.md`
+- [ ] 软上限默认 4k tokens(可配置),超出由 sub-agent 自行裁剪
+- [ ] 覆盖写 `oracle.md`;失败保留旧版
+- [ ] 写 `subagent.jsonl`
 
 Expected verification:
 
-- Memory-enabled Agent shows measurable improvement in win rate or token efficiency, or preserves enough evidence to explain why not.
+- 一次完整 run 后,`runs/<run_id>/summary.json` 三类 agent token 都非零
+- skill 库能被 skill creator 真实修改;`oracle.md` 在 run 结束后被改写
+- skill creator 的 reasoning 中能观察到"先匹配再创建"的流程
 
-## Phase 7 - Deferred Extensions
+## 持续任务 — Memory Iteration Log
 
-Linked feature: F-009
-
-- [ ] Evaluate automatic new run support.
-- [ ] Evaluate replay feasibility.
-- [ ] Evaluate provider-native adapters.
-- [ ] Evaluate more roles/difficulties.
-- [ ] Evaluate prompt or skill template auto-improvement.
+- [ ] 启动 F-008 阶段时创建 `docs/memory-iteration-log.md`,定义 entry schema(`version` / `change` / `motivation` / `observed`)
+- [ ] 每次对 memory 设计做有意义改动(skill schema、强插内容、sub-agent prompt、触发时机、工具集等)必须新增一条 entry
 
 ## Open Blocks
 
-- F-003 needs STS2MCP REST samples (running mod / saved JSON / interface docs). User confirmed none available yet — F-003 work blocked until provided.
-- Need STS2MCP runtime availability for manual smoke and full run checks (F-005 onward).
-- Need baseline run count and success threshold before F-008 verification.
+- 需要本地 STS2 + STS2MCP 运行环境做 F-005 起的端到端验证(无 GPU 要求,但需要游戏客户端)。
+- skill creator / oracle updater 的 prompt 设计在 v0 实施时由实际 trace 反推迭代,不在文档里定终稿。
+- loop_detector 的 `window_size` / `repeat_threshold` 默认值在 F-006 实施后基于实际 trace 估计。
+
+## Discontinued
+
+旧 doc 中的以下内容已删除或重写,记录于此防止混淆:
+
+- 旧 F-001 Runtime Boundary:并入 Phase 0 Setup,不再占 feature ID。
+- 旧 F-006 内的 skill 拆分(combat / map / event / rewards / fallback):废弃,改为 prompt 层 skill 元数据自动注入。
+- 旧 F-006 内的 `pre_execute` 参数预校验:废弃,STS2MCP 报错走 `ActionError` 路径。
+- 旧 F-007 内的胜率 / Act 进度 / baseline 对照:删除,研究方法改为纵向迭代 + memory-iteration-log。
+- 旧 F-008 内的 reflect / playbook / memory 三选一架构:替换为 L0 / L1 / L2 三层 + 两个 sub-agent。
+- 旧 F-009 Deferred Extensions:并入 Non-goals。
+- 旧 Open Block "F-003 needs samples":已 stale,真实 fixtures 早已收集。
+- 主 agent 的 python exec / compact / 通用文件 write 工具:不在 v0 范围。

@@ -1,164 +1,174 @@
 # slay2agent Framework Design
 
-本文档记录相对稳定的架构边界。任务拆解和执行进度放在 `docs/implementation-todo.md`。
+本文档记录相对稳定的架构边界。需求来源是 `docs/feature-requirements.md`,任务拆解和执行进度放在 `docs/implementation-todo.md`。
 
 ## Overview
 
-slay2agent 是一个 train-free 游戏 Agent。它不读取画面、不模拟键鼠、不训练模型,而是通过 STS2MCP REST API 读取结构化 state 并执行 action。决策由云端 LLM 完成,所有模型调用都经过统一 LLM adapter。
+slay2agent 是 train-free 的研究型 Agent。它不读取画面、不模拟键鼠、不训练模型,通过 STS2MCP REST API 读取结构化 state 并执行 action,所有决策由云端 LLM 完成,统一经过 LLM adapter。
 
-架构目标分两步:
-
-1. 先打通一个能跑完整局的最小 Agent 闭环。
-2. 再通过 trace、metrics、memory 和 reflect loop 提升胜率与 token 效率。
+研究焦点是 **memory 与 context 管理机制**;Agent 框架本身只是承载这一研究的 testbed。研究方法是**纵向迭代**(`docs/memory-iteration-log.md`),不做横向 baseline 对照。
 
 ## Layers
 
 ```text
-Evaluation / Trace
-Agent Orchestrator
-Skill Router + Skill Library
-Tool Bridge
-LLM Adapter
-State / Action Domain Model
-Game HTTP Client
-STS2MCP REST API
+Memory Iteration Log (docs/memory-iteration-log.md)
+Trace (runs/<run_id>/)
+Main Agent Loop  ──┐
+Skill Creator     ─┤   ← 三类 agent 共用 Sub-agent Runner
+Oracle Updater    ─┘
+Memory Layer (skills/ + oracle.md)
+Tool Bridge (gate + loop detector)
+LLM Adapter (provider-agnostic, role-aware token accounting)
+State Parser (state_type → compact view)
+Game HTTP Client (STS2MCP REST)
 ```
 
 ## Core Abstractions
 
 ### Game Client
 
-`game/client.py` 是 STS2MCP REST 的薄封装。它只负责 HTTP、序列化和错误暴露,不包含策略。
-
-核心能力:
-
-- `get_state(...) -> dict`
-- `post_action(name, **kwargs) -> dict`
-- 手动 inspect 入口
+`src/slay2agent/game/client.py`:STS2MCP REST 的薄封装。只负责 HTTP、序列化、错误暴露,不含任何策略。`get_state` / `post_action` / `post_action_and_settle` 是仅有的对外接口。
 
 ### Action Layer
 
-`game/actions.py` 提供 STS2MCP action 的 Python 封装。action 函数签名和 docstring 是 LLM tool schema 的来源之一。
+`src/slay2agent/game/actions.py`:STS2MCP action 的 Python 封装。函数签名 + docstring 是 tool schema 的来源之一。Action 不决定何时执行,合法性由 tool bridge 控制。
 
-Action layer 不决定何时执行动作;合法性过滤和恢复交给 tool bridge。
+### State Parser
 
-### State Model
+`src/slay2agent/game/schema.py`(待建):把 raw JSON 按 `state_type` 分发到对应解析路径,产出供 prompt 使用的 *compact view*。技术栈不绑定;dataclass 或 pydantic 任选,只要稳定输入输出 + 可测试。
 
-`game/schema.py` 把原始 JSON 转换为领域对象。Agent、Skill 和 Prompt 只依赖领域模型,不直接消费原始 dict。
-
-首版提供:
-
-- 按 `state_type` 区分的 pydantic 模型。
-- 常用领域对象,如 Card、Enemy、Relic、Potion、MapNode。
-- `to_compact_prompt()`。
-
-`diff(prev)` 是状态压缩阶段的后续能力。
+`to_compact_prompt(state)` 是策略侧的唯一入口,token 预算可控。
 
 ### LLM Adapter
 
-`llm/` 统一云端模型调用。上层只使用 canonical dataclass,不感知 OpenRouter、OpenAI、Anthropic 等 provider 差异。
+`src/slay2agent/llm/`:统一云端模型调用。canonical dataclass + provider 适配。首版只接 OpenRouter。
 
-首版 provider 是 OpenRouter。usage 只记录 token,不计算价格,不做预算熔断。
-
-### Agent Orchestrator
-
-Agent 的长期形态是:
-
-```text
-Perceive -> Plan -> Execute -> Reflect -> Finalize
-```
-
-最小可跑版本先实现:
-
-```text
-Perceive -> Execute -> Finalize
-```
-
-Plan 和 Reflect 在 memory 阶段补齐。这样可以先验证游戏通路、LLM tool 调用和 trace,再让 memory 进入优化闭环。
-
-### Skill Library
-
-Skill 是按场景组织的决策单元。首版按 `state_type` 硬分派,不上 BM25 或向量检索。
-
-初始 skill:
-
-- `combat.default`
-- `map.default`
-- `event.default`
-- `rewards.default`
-- `fallback.default`
-
-后续可补 shop、rest、card_select 等更细 skill。
+usage 必须按 `(agent_role, model)` 分桶记录 input/output token。三类 agent(`main` / `skill_creator` / `oracle_updater`)在调用 adapter 时显式传入 role 标记,trace 与 run summary 依赖这个标记做拆分。
 
 ### Tool Bridge
 
-LLM 不能直接调用 game action,必须经过 tool bridge。
+LLM 不直接调用 game action,统一经过 bridge:
 
-首版职责:
+- **gate**:按当前 `state_type` 决定可见 game tool 集合;memory tool(`list_skills` / `read_skill`)始终可见。
+- **loop_detector**:若最近 N 步内同一 `(action, args)` 出现次数达到阈值,直接终止当前 run 并写 trace metadata。**不做 recovery**。
+- **不做 pre_execute 参数预校验**;STS2MCP 报错走 `ActionError` 路径。
 
-- `gate`: 根据 state_type 与 skill allowlist 筛合法 action。
-- `pre_execute`: 检查参数和显然非法动作。
-- `loop_detector`: 终止重复无效动作循环。
+默认值(可配置):`window_size=10`、`repeat_threshold=4`。这两个数字会在 F-006 跑过真实 trace 后调整。
 
-后续可加入 recovery 和更细的 settle-aware 修复策略。
+### Memory Layer
 
-### Trace and Metrics
+三层结构,职责互不重叠:
 
-Trace 是 memory 和评估的输入,因此早于 memory 实现。
+- **L0 in-context history**:主 agent 单次小关(同一 `state_type` 段落)内的对话历史。`state_type` 切换边界处显式清空。
+- **L1 skill 库**:文件形式的策略片段。每个 skill 含极简 metadata(≤ 几十 token)+ body。所有 metadata 在每步主 agent 调用时强制注入 system prompt;body 由主 agent 通过 `read_skill` 主动获取。
+- **L2 `oracle.md`**:全局元策略文档。每次主 agent 调用强插入 system prompt。run 边界由 oracle updater 重写。软上限默认 4k tokens。
 
-首版每步至少记录:
+存放路径(惯例):
 
-- step
-- timestamp
-- state_type
-- LLM response
-- action
+```text
+agent_state/
+  skills/
+    <skill_id>.md       # frontmatter metadata + markdown body
+  oracle.md
+```
 
-run 级 metrics 用于建立 baseline,并在 memory 阶段验证改进。
+`agent_state/` 由用户通过 git 管理(commit / branch / rollback);代码侧不实现 snapshot 切换。
 
-### Memory and Reflect Loop
+### Sub-agent Runner
 
-Memory 是提升胜率和 token 效率的核心后续模块,但必须在 trace/eval baseline 之后实现。
+Skill creator 与 oracle updater 都是 sub-agent。它们和主 agent **共用底层基础设施**:LLM adapter、tool dispatch、token tracker、trace writer、错误处理。这是硬约束(见 invariants),不允许各写各的。
 
-职责划分:
+差别只在:
 
-- Reflect 从 episode/run 结果生成经验。
-- Playbook 保存 skill-local 经验。
-- Memory 保存跨 skill 或跨 run 的经验。
-- Plan 在决策前读取 playbook/memory,形成当前目标。
-- Metrics 对比 memory 前后的表现。
+- prompt 模板
+- 工具集(主 agent 仅 read 类;skill creator 含 read + write + delete skill;oracle updater 不暴露文件 IO,直接由 runner 接收返回内容写盘)
+- 触发时机
+- 输入装配方式
 
-Memory 的存储格式、检索方式和更新策略仍是延后设计点。
+首版 skill creator 与主 agent **同步阻塞**:主 agent 等 sub-agent 返回后再继续。后续根据延迟数据决定是否改为限时异步。
+
+### Main Agent Loop
+
+```text
+loop:
+    state = get_state()
+    if state_type 与上一步不同 and 上一段非空:
+        flush L0
+        run skill_creator(prev_segment_trace)   # 同步,失败不阻断
+    inject (skill metadata list, oracle.md) into system prompt
+    main_agent.decide(compact_view(state)) -> tool call
+    tool_bridge.gate -> post_action_and_settle
+    write trace step
+    if loop_detector triggers OR state == game_over:
+        run oracle_updater(full_run_trace)
+        break
+```
+
+死循环终止与正常 `game_over` 对 oracle updater 来说一视同仁,都触发 run 结束流程。trace 中标记终止原因。
+
+### Trace and Token Accounting
+
+`runs/<run_id>/`:
+
+- `steps.jsonl`:主 agent 每步一行
+- `subagent.jsonl`:skill creator / oracle updater 每次触发一行
+- `summary.json`:终止原因 + 三类 agent 各自 input/output token 总量、调用次数
+
+trace 是后续 memory 设计迭代的研究素材;summary 用于在 `docs/memory-iteration-log.md` 中归档。
+
+### Memory Iteration Log
+
+`docs/memory-iteration-log.md`:**研究方法层面的硬要求**,不是可选文档。每次对 memory 设计做有意义改动(skill schema、强插内容、sub-agent prompt、触发时机、工具集等)必须新增一条 entry,字段至少:`version` / `change` / `motivation` / `observed`。
+
+不是横向对照 baseline,而是**纵向研究记录**。
 
 ## Data Flow
 
 ```text
 get_state
-  -> parse StateModel
-  -> Perceive compact view
-  -> route Skill
-  -> Plan with memory/playbook when available
-  -> LLM decide
-  -> Tool Bridge gate/pre_execute
-  -> post_action
-  -> settle
-  -> trace step
-  -> Reflect and memory update when enabled
+  -> 检测 state_type 切换
+       (清空 L0; 触发 skill_creator)
+  -> parse compact view
+  -> assemble system prompt: oracle.md + skill metadata
+  -> main agent decide (LLM call, role=main)
+  -> tool bridge gate
+  -> post_action_and_settle
+  -> write trace step
+  -> loop or terminate
+
+run termination
+  -> run oracle_updater (LLM call, role=oracle_updater)
+  -> rewrite oracle.md
+  -> write run summary
+
+每次 state_type 切换 (含中间)
+  -> run skill_creator (LLM call, role=skill_creator)
+  -> 强制 list/read 匹配相似 skill
+  -> 0 或多次 write/delete skill
+  -> 写 subagent trace
 ```
 
 ## Invariants
 
-- Client 层不包含策略。
-- 策略层不直接依赖 STS2MCP 原始 dict。
-- 所有 LLM 调用经过 adapter。
+- Game client 不包含策略。
+- 策略层不直接依赖 STS2MCP 原始 dict,只通过 State Parser 的 compact view。
+- 所有 LLM 调用经过 adapter,且必须传入 `agent_role` 标记。
 - 所有 LLM action 调用经过 tool bridge。
-- Memory 优化必须能用 baseline metrics 验证。
-- 异常不能静默吞掉;使用 `except` 时必须记录 `logger.error(...)`。
+- L0 in-context 在 `state_type` 切换时必须清空。
+- 主 agent 不能 write 任何 memory 文件(只 read)。
+- skill creator 不能修改 `oracle.md`;oracle updater 不能修改 skill 库。
+- 三类 agent 共用一份 LLM adapter / tool dispatch / token tracker / trace writer 实现,不允许重复实现。
+- 死循环检测的处理是 *直接终止 run*,不做 recovery。
+- `except` 必须配合 `logger.error(...)`,不允许静默吞掉异常。
+- 任何 memory 设计变更必须在 `docs/memory-iteration-log.md` 留下 entry。
 
 ## Deferred Decisions
 
-- Memory 最小存储格式和检索策略。
-- 是否需要 replay 工具。
-- 是否支持自动开局和批量 eval。
-- 是否引入 provider 原生能力,如 prompt caching 或 extended thinking。
-- 是否允许 LLM 自动改写 prompt 或 skill 模板。
+- skill metadata 的最终字段集(`name` + `description` 之外是否加 `when_to_read` / `examples` / `tags`)。
+- skill body 是否需要长度上限。
+- skill creator 是否限制每小关最多写 N 个 skill。
+- `oracle.md` 4k tokens 软上限是否合适。
+- 是否引入第二个 LLM provider。
+- loop_detector 的 `window_size=10` / `repeat_threshold=4` 默认是否合适。
+- 是否允许主 agent 在 prompt 里以 "thought" 段方式 reason 后再 tool call。
+- skill creator 是否改为限时异步(首版同步阻塞)。

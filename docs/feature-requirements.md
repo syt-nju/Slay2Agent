@@ -4,54 +4,51 @@
 
 ## Final Goal
 
-slay2agent 的最终目标是构建一个 train-free、仅依赖 STS2MCP JSON/REST 与云端 LLM API 的 Slay the Spire 2 Agent。
+slay2agent 是一个**研究型 testbed**,用于探索"什么样的 memory 与 context 管理机制能让 LLM 真的玩好 Slay the Spire 2"。
 
-第一阶段先实现能自主跑完整局的最小闭环;第二阶段通过 trace、评估指标和 memory 系统,让 Agent 能基于历史经验持续提升胜率与 token 效率,并用可度量结果验证改进。
+阶段一验证 testbed 自身合格:Agent 从游戏 main menu 启动,按配置选定角色与 ascension,跑完一局并自然结束(`game_over` 或死循环终止),期间过程产生可复盘的完整 trace。
+
+阶段二起,在此 testbed 上**纵向迭代** memory 设计(skill / oracle 分层、sub-agent 触发时机、工具接口等都是研究变量),通过 `docs/memory-iteration-log.md` 文档化每版改动与观察。**不设横向 baseline 对照**,研究产出形式是迭代日志 + trace 复盘。
 
 ## Scope
 
 ### Goals
 
-- 使用 STS2MCP mod 作为唯一游戏感知与执行底层。
-- 所有 LLM 调用走云端 API,并通过统一适配层接入。
-- 初期先支持单人、单角色、手动开局后 Agent 接管。
-- 先做到完整 run 可跑通,再做 memory 驱动的表现提升。
-- 用 trace 与评估指标验证胜率和 token 效率变化。
+- STS2MCP REST 是唯一游戏感知/执行通路,云端 LLM API 是唯一推理通路。
+- 单脚本入口:从 main menu 启动,按配置选角色 + ascension,跑到 `game_over` 或死循环终止,无人工介入。
+- 三层 memory 架构:
+  - **L0 小关内 in-context**(`state_type` 切换即清空)
+  - **L1 skill 库**(metadata 强插 system prompt + 模型主动 read body)
+  - **L2 `oracle.md`**(强插 system prompt,run 结束时由独立 sub-agent 重写)
+- 三类 agent(主 agent / skill creator / oracle updater)**共用底层基础设施**(LLM client、tool dispatch、token tracking、trace writer)。
+- 每次 run 结束输出三类 agent 各自的 input/output token 量。
+- 维护 `docs/memory-iteration-log.md` 记录 memory 设计每次迭代。
 
 ### Non-goals
 
-- 不训练、微调、RLHF 或使用本地 GPU 推理。
-- 不自建视觉模型,不模拟键鼠输入。
-- 初期不承诺高 Ascension、多角色全覆盖或批量自动开局。
-- 不在首版实现 LLM 自动改写 Python skill 代码。
+- 不训练、微调、RLHF、本地 GPU 推理。
+- 不读取画面、不模拟键鼠。
+- 不追求胜率 / Act 通关进度作为成功条件。
+- 不做横向对照 baseline(无 memory-off 对照、无人类对比、无外部 bot 对比)。
+- 不做自动开新 run、不做菜单跨局自动重启,memory dir 不内置版本切换(用户用 git 管理)。
+- 不做批量 eval / replay 工具 / 多 provider 原生适配 / LLM 自动改写 prompt 模板。
+- 不在主 agent 暴露 python exec、compact 等通用代码执行类工具。
+- 阶段一不解决高 ascension / 多角色全覆盖,默认 Ironclad + A0;角色与 ascension 通过配置可改但需游戏内已解锁。
 
 ## Features
-
-### F-001 Runtime Boundary and Configuration
-
-**Status:** implemented
-
-系统必须明确运行边界:只接 STS2MCP REST,只使用云端 LLM API,并通过本地配置提供模型、endpoint、API key 和运行参数。
-
-**Acceptance criteria**
-
-- 项目文档说明 STS2MCP、游戏进程和云端 LLM API 的前置条件。
-- 本地配置不要求 GPU 环境。
-- 敏感信息不提交到仓库,示例配置只包含占位值。
-- CLI 至少能暴露后续 inspect/run/smoke 所需的配置入口。
 
 ### F-002 LLM Adapter
 
 **Status:** implemented for OpenRouter baseline
 
-所有 LLM 调用必须通过 provider-agnostic 适配层。首版支持 OpenRouter,统一 chat、tool call、usage、retry 和错误分类。
+所有 LLM 调用必须通过 provider-agnostic 适配层。首版支持 OpenRouter,统一 chat、tool call、usage、retry 和错误分类。三类 agent(主 / skill creator / oracle updater)共用同一 adapter。
 
 **Acceptance criteria**
 
 - 上层只依赖 canonical request/response 类型,不直接依赖 provider wire format。
-- 支持 text response、tool calls、stop reason 和 token usage。
+- 支持 text response、tool calls、stop reason、token usage。
 - transient 错误可重试,不可重试错误可分类返回。
-- usage 按模型分桶记录 token,不在首版做价格计算或预算熔断。
+- usage 按 `(agent_role, model)` 分桶记录 input/output token,不做价格计算或预算熔断。
 - 离线测试覆盖协议类型、错误分类、retry 和 usage。
 
 ### F-003 Game Communication Path
@@ -64,103 +61,118 @@ slay2agent 的最终目标是构建一个 train-free、仅依赖 STS2MCP JSON/RE
 
 - `get_state` 能读取当前游戏 JSON state。
 - `post_action` 能调用 STS2MCP action 并返回响应。
-- action 封装与 STS2MCP 暴露的工具签名保持一致。
-- action docstring 可作为 LLM tool 描述来源。
+- action 封装与 STS2MCP 暴露的工具签名保持一致;action docstring 可作为 LLM tool 描述来源。
 - 动作后统一等待状态稳定,避免 end turn 后读取到旧状态。
 - 超时或动作失败时记录 `logger.error(...)`,不静默吞掉异常。
-- 有 fixture 驱动测试覆盖至少 5 个典型 action 的请求/响应往返。
-- 有手动 inspect 命令用于在 mod 运行时打印当前 state。
+- 有 fixture 驱动测试覆盖典型 action 的请求/响应往返。
+- `slay2agent inspect` 能在 mod 运行时打印当前 state。
 
-### F-004 State and Action Domain Model
-
-**Status:** planned
-
-系统需要把原始 JSON state 转换为策略层可依赖的领域对象,并提供 prompt 压缩入口。
-
-**Acceptance criteria**
-
-- 使用 pydantic v2 建模主要 state_type。
-- 策略层不直接依赖原始 dict。
-- 暴露 Card、Enemy、Relic、Potion、MapNode 等领域对象。
-- 提供 `to_compact_prompt()` 作为首版 prompt 输入。
-- `diff(prev)` 延后到状态压缩阶段,不阻塞首版建模。
-- 每个已知 state_type 至少有一个 fixture 解析测试。
-
-### F-005 Minimal Runnable Agent Loop
+### F-004 State Parser & Compact View
 
 **Status:** planned
 
-系统需要先实现最小可跑 Agent:Perceive -> Execute -> Finalize。Plan 和 Reflect 在首版可以是空实现或直通。
+系统需要把原始 JSON state 转换为策略层和 prompt 层都稳定可依赖的视图。技术选型不进入需求,只要求 *输入稳定 / 输出可压缩 / 可被测试*。
 
 **Acceptance criteria**
 
-- Agent 能从当前游戏 state 开始循环决策。
-- Execute 阶段能调用 LLM 并通过 tool bridge 执行动作。
-- Agent 能跑完一整局真实游戏,胜负不作为首个通过条件。
-- 运行期间若 loop detector 未触发终止,视为最小闭环通过。
-- Finalize 能为每步写入结构化 trace。
+- 提供按 `state_type` 分类的解析入口,主 agent 不直接消费原始 dict。
+- 暴露当前小关相关的领域信息(如 combat 内 hand / energy / enemies、map 内可选节点、reward 内可选项),细节范围以"主 agent 决策所需"为准。
+- 提供 `to_compact_prompt(state)`,输出 token 预算可控的 state 文本表达,作为主 agent 每步 user message 的核心内容。
+- 已知 `state_type` 至少有一个 fixture 解析测试(可复用 `tests/fixtures/real/` 已收集的 14 个真实样本)。
+- 未识别的 `state_type` 走 fallback,不让 Agent 崩溃。
 
-### F-006 Skill Routing and Tool Bridge
+### F-005 Phase 1 Demo Loop
 
 **Status:** planned
 
-系统需要按 state_type 分派 skill,并通过 tool bridge 限制 LLM 可执行动作。
+系统需要把"主 agent 从 main menu 跑完一局"这条端到端通路打通。这个 feature 的通过判据就是 testbed 自身合格的标志。
 
 **Acceptance criteria**
 
-- 首版至少实现 combat、map、event、rewards 四类 skill。
-- 未覆盖 state_type 走 fallback skill,不导致 Agent 崩溃。
-- 每个 skill 声明允许使用的 action/tool。
-- gate 根据当前 state_type 和 skill allowlist 筛合法 action。
-- pre_execute 能拦截明显非法参数,如 card index 越界、target 不存在、能量不足。
-- loop_detector 能识别连续相同 `(action, args)` 达到阈值的循环并终止。
+- 入口脚本(如 `slay2agent play`)接受配置文件,指定角色与 ascension(默认 Ironclad + A0)。
+- Agent 从 main menu 状态启动,完成菜单 → 角色选择 → ascension 选择 → 进入 run 的导航。
+- Agent 持续推理直到出现 `game_over` 状态,或被 loop detector 终止。
+- **死循环判定即终止 run**(不做 recovery),终止原因写入 trace metadata。
+- 每个 `state_type` 切换处,主 agent 的 in-context 历史(L0)被显式清空,只保留 skill metadata + `oracle.md` 作为强插内容。
+- run 结束后输出三类 agent 各自 input/output token 总量(F-008 未实施时 sub-agent 部分为 0,但字段必须存在)。
+- 一次完整 run 对应一个 `runs/<run_id>/` 目录,内含 trace 和 token 汇总。
 
-### F-007 Trace, Metrics, and Baseline Evaluation
+### F-006 Tool Bridge & Loop Detector
 
 **Status:** planned
 
-在 memory 优化前,系统必须先能记录 baseline 并计算可对比指标。
+主 agent 通过 tool bridge 调用游戏 action;tool bridge 负责合法 action 集合 gate 与死循环检测。**不做 skill 拆分,不做 pre_execute 参数预校验**(STS2MCP 报错由 `ActionError` 路径处理,不在客户端二次校验)。
 
 **Acceptance criteria**
 
-- 每步至少记录 step、timestamp、state_type、LLM response 和 action。
-- run 级指标至少包含是否完成、通关 Act、胜负、token usage。
-- 支持统计平均 tokens per run 和平均 tokens per combat turn。
-- 能从 trace 人工复盘 Agent 决策过程。
-- Memory 改进前必须先保存一个可对比 baseline。
+- 按当前 `state_type` 暴露给 LLM 的 tool 集合自动收窄(如 combat 内不出现 map 选择 tool)。
+- loop detector 识别 *最近 N 步内 `(action, args)` 重复达到阈值* 的情况,直接终止 run 并写 trace metadata。
+- N 与阈值通过配置可调,默认值在 framework-design 中定义。
+- 单元测试覆盖 gate 收窄、loop 触发、loop 未触发三类场景。
 
-### F-008 Memory and Reflect Improvement Loop
+### F-007 Trace & Token Accounting
 
-**Status:** planned after F-007
+**Status:** planned
 
-系统需要在 trace/eval baseline 之后实现 memory 驱动的优化闭环。Memory 负责沉淀跨 episode 或跨 run 的经验;Plan/Reflect/playbook 负责把经验用于后续决策并评估效果。
+trace 是 memory 设计迭代的唯一研究素材,必须在 F-008 之前可用。**不记录胜率 / Act 进度等性能指标**,只记录可复盘所需信息和 token 消耗。
 
 **Acceptance criteria**
 
-- Reflect 能从 episode 或 run 结果中生成可读经验记录。
-- Memory 能持久化经验,并在后续决策前按当前 state/skill 读取相关内容。
-- Skill-local 经验优先进入 playbook;跨 skill 或跨 run 经验进入 memory。
-- Plan 阶段能读取 memory/playbook,形成当前回合或当前场景目标。
-- 改进效果必须通过 F-007 指标与 baseline 对比验证。
-- 如果 memory 未带来可度量提升,需要保留失败 trace 和分析记录。
+- 每步至少记录:`step`、`timestamp`、`state_type`、L0 是否在此步被清空、注入到 system prompt 的 skill metadata 列表 + `oracle.md` 版本标识、主 agent 完整 LLM request/response、被调用的 tool 与参数、settle 后的新 state 摘要。
+- 每次 sub-agent 触发(skill creator / oracle updater)记录:触发原因、输入摘要、完整 LLM request/response、产生的文件级修改 diff(skill 文件增删改,或 `oracle.md` 重写)。
+- run 结束后输出 `runs/<run_id>/summary.json`,包含终止原因(`game_over` / `loop_terminated` / `error`)、三类 agent 各自 input/output token 总量、调用次数。
+- trace 必须能被人工或脚本以 jsonl/json 形式直接读取,不依赖运行时数据库。
 
-### F-009 Deferred Extensions
+### F-008a Skill Registry + Read Tool
 
-**Status:** deferred
+**Status:** planned
 
-以下能力不进入首个可跑通版本,只在核心闭环稳定后评估:
+主 agent 侧的 skill 系统:metadata 强插,正文按需 read。
 
-- 批量 eval 和自动开局。
-- replay 工具。
-- 更多 LLM provider 原生适配。
-- 多角色、多难度、高 Ascension。
-- LLM 自动改写 prompt 或 skill 模板。
+**Acceptance criteria**
+
+- skill 以文件形式存放在固定 memory dir(具体路径由 framework-design 定义)。
+- 每个 skill 含 metadata(目标 ≤ 几十 token,描述用途与触发场景)和 body(详细策略文本)。
+- 主 agent 每步 system prompt 强制注入:全部 skill 的 metadata 列表 + 当前 `oracle.md` 全文。
+- 主 agent 暴露两个 memory 工具:`list_skills()`、`read_skill(skill_id)`。**无 write、无 python exec、无 compact**。
+- skill 文件格式应允许人工编辑,以便研究者直接调整。
+- skill 库为空 / `oracle.md` 为空时主 agent 仍能正常决策。
+
+### F-008b Skill Creator Sub-agent
+
+**Status:** planned after F-008a
+
+一个独立 sub-agent,在每次 `state_type` 切换边界自动启动,基于刚结束的小关 trace 维护 skill 库。
+
+**Acceptance criteria**
+
+- 触发时机:`state_type` 切换且上一段不是空段(刚启动除外)。
+- 输入:上一段 L0 完整 trace + 当前 `oracle.md` + 现有 skill 库可读访问。
+- 工具集:`list_skills` / `read_skill` / `write_skill` / `delete_skill`,**不能修改 `oracle.md`**。
+- prompt 强制流程:在做任何 `write` / `delete` 之前,必须先通过 `list` + `read` 检查是否存在相似 skill,优先选择"扩写已有 skill"或"合并相似 skill",最后才考虑"新建 skill"。匹配过程必须出现在 sub-agent 的 reasoning 中并写入 trace。
+- 与主 agent 共用同一个 LLM adapter / tool dispatch / token tracker / trace writer,不允许重复实现。
+- 触发失败(网络 / LLM 错误)记录 `logger.error(...)`,不阻断主 agent 推理。
+
+### F-008c Oracle Updater Sub-agent
+
+**Status:** planned after F-008a
+
+一个独立 sub-agent,在每局结束(`game_over` 或死循环终止)时启动,产出新版 `oracle.md`。
+
+**Acceptance criteria**
+
+- 触发时机:run 结束(任意原因)。
+- 输入:整局 trace + 该局所有 skill creator 的 reasoning 摘要 + 上一版 `oracle.md`。
+- 输出:覆盖写入 `oracle.md`。
+- **软上限默认 4k tokens**;超出时 sub-agent 必须自行裁剪/总结,不允许直接超长写盘。该上限通过配置可调。
+- 与主 agent / skill creator 共用同一基础设施。
+- **不能修改 skill 库**。
+- 失败时记录 `logger.error(...)` 并保留上一版 `oracle.md`。
 
 ## Open Questions
 
-- STS2MCP 当前版本是否提供自动开新 run 的接口?
-- 首个支持角色是否固定为 Ironclad,还是以当前游戏状态为准?
-- F-007 baseline 至少需要多少个 run 才算可比较?
-- F-008 memory 的最小可行存储格式是 markdown、JSONL、SQLite,还是向量索引?
-- token 效率提升目标是否需要设定明确阈值,例如下降 40%?
-- memory 改进以胜率优先,还是以 token 效率优先?
+- skill metadata 的最小字段集(`name` / `description` 之外是否再加 `when_to_read` / `examples` / `tags`)→ F-008a 实施时基于真实使用反推。
+- loop detector 的 N 与阈值默认值 → F-006 实施后用实际 trace 估计。
+- skill creator 是否需要"建议"边界(每小关最多写 N 个 skill)→ 首版默认不限,F-008b 跑过后再评估。
+- `oracle.md` 4k tokens 软上限是否合理 → 阶段二第一次跑通后回看 token 占比再调整。
+- skill creator 与 main agent 之间的同步关系(同步阻塞 vs 异步限时)→ 首版同步阻塞,后续看延迟数据决定。
