@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from slay2agent.agent.skill_creator import run_skill_creator
 from slay2agent.agent.tool_bridge import LoopDetected, LoopDetector, ToolBridge
 from slay2agent.agent.trace import (
     StepRecord,
@@ -216,16 +217,28 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
                 l0_cleared = False
                 if prev_state_type is not None and state_type != prev_state_type:
                     if l0:
+                        prev_l0_segment = l0  # capture before clear
                         logger.info(
                             "state_type changed %s → %s — clearing L0 (%d messages)",
                             prev_state_type, state_type, len(l0),
                         )
                         l0 = []
                         l0_cleared = True
+                        # F-008b: run skill creator on the completed segment
+                        run_skill_creator(
+                            prev_l0=prev_l0_segment,
+                            skill_registry=skill_registry,
+                            oracle_path=oracle_path,
+                            adapter=adapter,
+                            tracker=tracker,
+                            trace=trace,
+                            model=cfg.llm.model,
+                            prev_state_type=prev_state_type,
+                            new_state_type=state_type,
+                        )
                     # Reset loop detector so actions from one screen don't
                     # pollute the window for the next.
                     loop_detector.reset()
-                    # F-008b: skill_creator would fire here (stub in F-005).
 
                 prev_state_type = state_type
 

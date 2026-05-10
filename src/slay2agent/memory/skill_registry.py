@@ -185,6 +185,48 @@ class SkillRegistry:
             "body": skill.body,
         }
 
+    # ── write helpers ──────────────────────────────────────────────────────
+
+    def write_skill(
+        self,
+        skill_id: str,
+        description: str,
+        when_to_read: str,
+        body: str,
+    ) -> None:
+        """Create or overwrite a skill file and invalidate cache.
+
+        The file is written in the standard frontmatter format so it can be
+        read back by ``_load_skill_file``.
+        """
+        self._skills_dir.mkdir(parents=True, exist_ok=True)
+        path = self._skills_dir / f"{skill_id}.md"
+        content = (
+            f"---\n"
+            f"description: {description}\n"
+            f"when_to_read: {when_to_read}\n"
+            f"---\n\n"
+            f"{body}\n"
+        )
+        path.write_text(content, encoding="utf-8")
+        self._cache = None
+        logger.info("skill_registry: wrote skill %r to %s", skill_id, path)
+
+    def delete_skill(self, skill_id: str) -> bool:
+        """Delete a skill file.
+
+        Returns ``True`` if the file existed and was removed, ``False`` if the
+        skill was not found.  Invalidates the cache on success.
+        """
+        path = self._skills_dir / f"{skill_id}.md"
+        if not path.exists():
+            logger.debug("skill_registry: delete_skill %r — not found", skill_id)
+            return False
+        path.unlink()
+        self._cache = None
+        logger.info("skill_registry: deleted skill %r", skill_id)
+        return True
+
     # ── internal ───────────────────────────────────────────────────────────
 
     def _load(self) -> dict[str, Skill]:
