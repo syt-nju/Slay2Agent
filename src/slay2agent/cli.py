@@ -3,7 +3,7 @@
 Subcommands:
     smoke    Run the OpenRouter live smoke test (F-002).
     inspect  Print current STS2MCP state via the game REST client (F-003).
-    run      Run the agent loop on the current game (stub until F-005).
+    play     Run the Phase 1 demo loop (F-005).
     config   Print effective configuration (with secrets masked).
 """
 
@@ -66,12 +66,27 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_run(args: argparse.Namespace) -> int:
-    print(
-        "run: not implemented yet — pending F-005 (Minimal Runnable Agent Loop).",
-        file=sys.stderr,
+def _cmd_play(args: argparse.Namespace) -> int:
+    """Phase 1 demo loop: main menu → game_over (F-005)."""
+    from pathlib import Path
+
+    from slay2agent.agent.loop import RunConfig, run_demo_loop
+
+    cfg = Config.load()
+    run_cfg = RunConfig(
+        character=args.character.upper(),
+        ascension=args.ascension,
+        runs_dir=Path(args.runs_dir),
+        window_size=args.window_size,
+        repeat_threshold=args.repeat_threshold,
     )
-    return 2
+    try:
+        run_dir = run_demo_loop(cfg, run_cfg)
+        print(f"Run complete. Trace written to: {run_dir}")
+        return 0
+    except Exception as exc:
+        print(f"play: fatal error — {exc}", file=sys.stderr)
+        return 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -101,10 +116,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_inspect.set_defaults(func=_cmd_inspect)
 
-    p_run = sub.add_parser(
-        "run", help="Run the agent loop on the current game (stub until F-005)."
+    p_play = sub.add_parser(
+        "play", help="Run the Phase 1 demo loop (main menu → game_over)."
     )
-    p_run.set_defaults(func=_cmd_run)
+    p_play.add_argument(
+        "--character", default="IRONCLAD", help="Character id (default: IRONCLAD)."
+    )
+    p_play.add_argument(
+        "--ascension", type=int, default=0, help="Ascension level (default: 0)."
+    )
+    p_play.add_argument(
+        "--runs-dir", default="runs", help="Directory to write run traces (default: runs/)."
+    )
+    p_play.add_argument(
+        "--window-size", type=int, default=10,
+        help="Loop detector window size (default: 10).",
+    )
+    p_play.add_argument(
+        "--repeat-threshold", type=int, default=4,
+        help="Loop detector repeat threshold (default: 4).",
+    )
+    p_play.set_defaults(func=_cmd_play)
 
     return parser
 

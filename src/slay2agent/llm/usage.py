@@ -19,11 +19,13 @@ logger = logging.getLogger(__name__)
 @dataclass
 class UsageTracker:
     _buckets: dict[tuple[AgentRole, str], Usage] = field(default_factory=dict)
+    _calls: dict[tuple[AgentRole, str], int] = field(default_factory=dict)
 
     def record(self, role: AgentRole, model: str, usage: Usage) -> None:
         bucket = self._buckets.setdefault((role, model), Usage())
         bucket.input_tokens += usage.input_tokens
         bucket.output_tokens += usage.output_tokens
+        self._calls[(role, model)] = self._calls.get((role, model), 0) + 1
         logger.info(
             "usage role=%s model=%s this=[in=%d out=%d] total=[in=%d out=%d]",
             role,
@@ -57,6 +59,13 @@ class UsageTracker:
             target = agg.setdefault(role, Usage())
             target.input_tokens += u.input_tokens
             target.output_tokens += u.output_tokens
+        return agg
+
+    def role_call_counts(self) -> dict[str, int]:
+        """Per-role total LLM call count across all models."""
+        agg: dict[str, int] = {}
+        for (role, _model), count in self._calls.items():
+            agg[role] = agg.get(role, 0) + count
         return agg
 
     def total(self) -> Usage:

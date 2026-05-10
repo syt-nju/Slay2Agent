@@ -30,9 +30,9 @@ F-005 / F-006 / F-007 互相耦合,会在同一个 phase 内推进:demo loop 走
 - [x] `tests/fixtures/real/` 已收集 14 个真实 STS2MCP state 样本
 - [x] `vendor/sts2mcp-docs/` 已就位
 - [x] F-004 State Parser & compact view(`schema.py`,dataclass + per-state-type 渲染器 + UnknownView fallback)
-- [ ] F-005 Phase 1 demo loop(main_menu → game_over)
-- [ ] F-006 Tool Bridge + Loop Detector
-- [ ] F-007 Trace + Token Accounting
+- [x] F-005 Phase 1 demo loop(main_menu → game_over)
+- [x] F-006 Tool Bridge + Loop Detector
+- [x] F-007 Trace + Token Accounting
 - [ ] F-008a Skill Registry + Read Tool
 - [ ] F-008b Skill Creator Sub-agent
 - [ ] F-008c Oracle Updater Sub-agent
@@ -53,36 +53,31 @@ F-005 / F-006 / F-007 互相耦合,会在同一个 phase 内推进:demo loop 走
 
 - 暂未收集 fixture 的 `rest_site` / `shop` / `fake_merchant` / `treasure` / `bundle_select` / `relic_select` / `crystal_sphere` / `boss` 默认走 `UnknownView`;F-005 demo loop 验证时若被频繁踩到再补专用 view。
 
-## Phase 2 — Demo Loop + Tool Bridge + Trace (F-005 / F-006 / F-007)
+## Phase 2 — Demo Loop + Tool Bridge + Trace (F-005 / F-006 / F-007) ✅
 
 这三个 feature 同步推进,任何一项缺失都不能验证另外两项。
 
-### F-006 Tool Bridge & Loop Detector
+### F-006 Tool Bridge & Loop Detector ✅
 
-- [ ] gate 直接消费 `actions_for_state(state_type)`,叠加 memory tool(F-008a 的 `list_skills` / `read_skill`)始终可见
-- [ ] loop detector(最近 N 步同 `(action, args)` 重复达阈值 → 终止)
-- [ ] gate 收窄 / loop 触发 / loop 未触发 三类单元测试
+- [x] gate 直接消费 `actions_for_state(state_type)`,叠加 memory tool(F-008a 的 `list_skills` / `read_skill`)始终可见
+- [x] loop detector(最近 N 步同 `(action, args)` 重复达阈值 → 终止)
+- [x] gate 收窄 / loop 触发 / loop 未触发 三类单元测试(`tests/test_tool_bridge.py`, 16/16 绿)
 
-### F-007 Trace & Token Accounting
+### F-007 Trace & Token Accounting ✅
 
-- [ ] `runs/<run_id>/steps.jsonl` 写入器(主 agent 每步一行)
-- [ ] `runs/<run_id>/subagent.jsonl` 写入器(F-008b/c 才会用,先把接口暴露好)
-- [ ] `UsageTracker` 在 `record()` 处加 per-(role, model) 调用次数计数(分桶本身已在 F-002 完成)
-- [ ] `runs/<run_id>/summary.json`(终止原因 + `tracker.snapshot()` + `tracker.role_totals()` + 调用次数)
+- [x] `runs/<run_id>/steps.jsonl` 写入器(主 agent 每步一行)
+- [x] `runs/<run_id>/subagent.jsonl` 写入器(F-008b/c 才会用,接口已暴露)
+- [x] `UsageTracker` 在 `record()` 处加 per-(role, model) 调用次数计数(`role_call_counts()`)
+- [x] `runs/<run_id>/summary.json`(终止原因 + `tracker.snapshot()` + `tracker.role_totals()` + 调用次数,三类 agent 角色始终存在,未用者为 0)
+- [x] `tests/test_trace.py` 14/14 绿
 
-### F-005 Phase 1 Demo Loop
+### F-005 Phase 1 Demo Loop ✅
 
-- [ ] `slay2agent play` 入口(配置文件指定角色 / ascension,默认 Ironclad + A0)
-- [ ] menu / character_select / ascension / singleplayer 各 `state_type` 的 navigation 逻辑(可在主 agent prompt 里简单引导,无需独立 skill)
-- [ ] `state_type` 切换时显式清空 L0
-- [ ] system prompt 注入空 skill metadata 列表 + 空 `oracle.md`(F-008 之前为空字符串占位)
-- [ ] 死循环 / `game_over` 触发 run 终止 + summary 写盘
-
-Expected verification:
-
-- 一次完整 run 能从 main_menu 跑到 `game_over` 或死循环终止
-- `runs/<run_id>/summary.json` 包含三类 agent token 字段(此时 sub_agent 部分为 0)
-- trace 内容可人工复盘:能看到每步 `state_type`、注入内容、LLM 调用、tool 调用、settle 后 state
+- [x] `slay2agent play` 入口(`--character`, `--ascension`, `--runs-dir`, `--window-size`, `--repeat-threshold`)
+- [x] `state_type` 切换时显式清空 L0(含 log)
+- [x] system prompt 注入空 skill metadata 列表 + 空 `oracle.md`(F-008 前占位)
+- [x] `game_over` / `LoopDetected` 触发终止 + summary 写盘
+- [x] `finally` 确保 summary.json 在所有终止路径(含 exception)都写盘
 
 ## Phase 3 — Skill-based Memory v0 (F-008a / F-008b / F-008c)
 

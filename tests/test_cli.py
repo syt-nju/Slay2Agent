@@ -41,7 +41,7 @@ def test_parser_requires_subcommand() -> None:
 
 def test_parser_known_subcommands() -> None:
     parser = build_parser()
-    for sub in ("config", "smoke", "inspect", "run"):
+    for sub in ("config", "smoke", "inspect", "play"):
         args = parser.parse_args([sub])
         assert args.command == sub
 
@@ -115,8 +115,9 @@ def test_inspect_health_prints_mod_hello(
     assert "STS2 MCP" in out
 
 
-def test_run_is_stub(capsys: pytest.CaptureFixture[str]) -> None:
-    rc = main(["run"])
-    err = capsys.readouterr().err
-    assert rc == 2
-    assert "F-005" in err
+def test_play_subcommand_exists() -> None:
+    parser = build_parser()
+    args = parser.parse_args(["play"])
+    assert args.command == "play"
+    assert args.character == "IRONCLAD"
+    assert args.ascension == 0

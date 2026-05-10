@@ -2,7 +2,7 @@
 .claude/
 .cursor/
 .agent/
-agent/
+/agent/
 
 # Python
 .venv/
