@@ -39,17 +39,19 @@ from slay2agent.agent.trace import (
 )
 from slay2agent.config import Config
 from slay2agent.game.client import ActionError, GameClient
-from slay2agent.game.schema import parse, to_compact_prompt
+from slay2agent.game.schema import CombatView, parse, to_compact_prompt
 from slay2agent.llm.openrouter import OpenRouterAdapter
 from slay2agent.llm.protocol import AgentRole, Message, ToolCall
 from slay2agent.llm.retry import call_with_retry
 from slay2agent.llm.usage import UsageTracker
+from slay2agent.memory.oracle import oracle_version, read_oracle
+from slay2agent.memory.skill_registry import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
 # Default configuration for the demo loop.
-_DEFAULT_WINDOW_SIZE = 10
-_DEFAULT_REPEAT_THRESHOLD = 4
+_DEFAULT_WINDOW_SIZE = 12
+_DEFAULT_REPEAT_THRESHOLD = 6
 _AGENT_ROLE: AgentRole = "main"
 
 # System prompt preamble — injected every LLM call.
@@ -57,9 +59,8 @@ _SYSTEM_PREAMBLE = """You are an expert player of Slay the Spire 2.
 The character and ascension level have already been selected for you. Your job is to play the run until game_over or until you are told to stop.
 
 Rules:
-- Always call exactly one tool per response. Never reply with plain text only.
+- CRITICAL: Call exactly ONE tool per response. Never call multiple tools at once. Never reply with plain text only.
 - Use menu_select to navigate any remaining menu screens (e.g. ascension selection).
-- In combat, play cards or end_turn. Spend energy efficiently.
 - On the map, choose_map_node to advance.
 - On rewards/card_reward, claim what is useful or skip.
 - list_skills / read_skill give you strategic memory — consult them when unsure.
@@ -126,14 +127,21 @@ def _navigate_to_run_start(client: GameClient, character: str) -> None:
         main menu → singleplayer → standard → select <character>
         → confirm → embark
     Each step calls dispatch which blocks until the game state settles.
-    If the game is already past the main menu this will likely raise an
-    ActionError; the caller lets that propagate.
+    If the game is not at the main menu (state_type != 'menu'), navigation is
+    skipped and the agent loop takes over from wherever the game currently is.
     """
+    current = client.get_state()
+    if current.get("state_type") != "menu":
+        logger.info(
+            "pre-loop nav: current state_type=%r — skipping character navigation",
+            current.get("state_type"),
+        )
+        return
+
     steps = [
         ("menu_select", {"option": "singleplayer"}),
         ("menu_select", {"option": "standard"}),
         ("menu_select", {"option": character}),
-        ("menu_select", {"option": "confirm"}),
         ("menu_select", {"option": "embark"}),
     ]
     for action, args in steps:
@@ -165,13 +173,21 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
         repeat_threshold=run_cfg.repeat_threshold,
     )
 
+    # F-008a: initialise memory layer.
+    skill_registry = SkillRegistry(cfg.memory.skills_dir)
+    oracle_path = cfg.memory.oracle_path
+
     logger.info("starting run %s  character=%s asc=%d", run_id, run_cfg.character, run_cfg.ascension)
 
     termination_reason: TerminationReason = "error"
     extra_summary: dict[str, Any] = {}
 
     with GameClient(cfg.game.base_url, timeout=cfg.game.timeout) as client:
-        bridge = ToolBridge(client=client, loop_detector=loop_detector)
+        bridge = ToolBridge(
+            client=client,
+            loop_detector=loop_detector,
+            skill_registry=skill_registry,
+        )
 
         # Hard-navigate to run start before handing control to the agent.
         _navigate_to_run_start(client, run_cfg.character)
@@ -188,6 +204,14 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
                 state_type = parsed.state_type
                 compact = to_compact_prompt(parsed)
 
+                # Extract is_play_phase for combat states so the gate can block
+                # play_card / end_turn during enemy turn.
+                is_play_phase = (
+                    parsed.view.is_play_phase
+                    if isinstance(parsed.view, CombatView)
+                    else True
+                )
+
                 # ── L0 clear on state_type transition ───────────────────────
                 l0_cleared = False
                 if prev_state_type is not None and state_type != prev_state_type:
@@ -198,9 +222,23 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
                         )
                         l0 = []
                         l0_cleared = True
+                    # Reset loop detector so actions from one screen don't
+                    # pollute the window for the next.
+                    loop_detector.reset()
                     # F-008b: skill_creator would fire here (stub in F-005).
 
                 prev_state_type = state_type
+
+                # ── F-008a: reload + read memory layer ──────────────────────
+                # Reload after L0 clear (state_type transition) so that skills
+                # written by a future skill_creator sub-agent (F-008b) are
+                # picked up immediately on the next screen.
+                if l0_cleared:
+                    skill_registry.reload()
+
+                skill_meta_lines = skill_registry.metadata_lines()
+                oracle_content = read_oracle(oracle_path)
+                oracle_ver = oracle_version(oracle_path)
 
                 # ── Terminate on game_over before LLM call ───────────────────
                 if state_type == "game_over":
@@ -212,8 +250,8 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
                         timestamp=_timestamp(),
                         state_type=state_type,
                         l0_cleared=l0_cleared,
-                        skill_metadata_ids=[],
-                        oracle_version=None,
+                        skill_metadata_ids=[m.skill_id for m in skill_registry.list_skills()],
+                        oracle_version=oracle_ver,
                         llm_request_messages=[],
                         llm_response_message={},
                         llm_usage={"input_tokens": 0, "output_tokens": 0},
@@ -227,8 +265,8 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
 
                 # ── Assemble system prompt ───────────────────────────────────
                 system_content = _build_system_prompt(
-                    skill_metadata_list=[],   # F-008a will fill this
-                    oracle_content="",        # F-008a will fill this
+                    skill_metadata_list=skill_meta_lines,
+                    oracle_content=oracle_content,
                 )
                 system_msg = Message(role="system", content=system_content)
 
@@ -240,7 +278,7 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
                 user_msg = Message(role="user", content=user_content)
 
                 full_messages = [system_msg] + l0 + [user_msg]
-                tools = bridge.visible_tools(state_type)
+                tools = bridge.visible_tools(state_type, is_play_phase=is_play_phase)
 
                 # ── LLM call ─────────────────────────────────────────────────
                 resp = call_with_retry(
@@ -274,7 +312,7 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
                         )
 
                     try:
-                        result_raw = bridge.execute(state_type, action_name, action_args)
+                        result_raw = bridge.execute(state_type, action_name, action_args, is_play_phase=is_play_phase)
                         result_parsed = parse(result_raw)
                         tool_result_state_type = result_parsed.state_type
                         settled_summary = to_compact_prompt(result_parsed)
@@ -309,8 +347,8 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
                             timestamp=_timestamp(),
                             state_type=state_type,
                             l0_cleared=l0_cleared,
-                            skill_metadata_ids=[],
-                            oracle_version=None,
+                            skill_metadata_ids=[m.skill_id for m in skill_registry.list_skills()],
+                            oracle_version=oracle_ver,
                             llm_request_messages=[_message_to_dict(m) for m in full_messages],
                             llm_response_message=_message_to_dict(assistant_msg),
                             llm_usage={
@@ -368,8 +406,8 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
                     timestamp=_timestamp(),
                     state_type=state_type,
                     l0_cleared=l0_cleared,
-                    skill_metadata_ids=[],
-                    oracle_version=None,
+                    skill_metadata_ids=[m.skill_id for m in skill_registry.list_skills()],
+                    oracle_version=oracle_ver,
                     llm_request_messages=[_message_to_dict(m) for m in full_messages],
                     llm_response_message=_message_to_dict(assistant_msg),
                     llm_usage={

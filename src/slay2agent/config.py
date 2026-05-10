@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -58,13 +59,49 @@ class GameConfig:
         )
 
 
+DEFAULT_AGENT_STATE_DIR = "agent_state"
+
+
+@dataclass(frozen=True)
+class MemoryConfig:
+    """Paths for the L1/L2 memory layer (skill library + oracle)."""
+
+    agent_state_dir: Path = Path(DEFAULT_AGENT_STATE_DIR)
+
+    @classmethod
+    def from_env(cls) -> "MemoryConfig":
+        return cls(
+            agent_state_dir=Path(
+                os.getenv("AGENT_STATE_DIR", DEFAULT_AGENT_STATE_DIR)
+            ),
+        )
+
+    @property
+    def skills_dir(self) -> Path:
+        return self.agent_state_dir / "skills"
+
+    @property
+    def oracle_path(self) -> Path:
+        return self.agent_state_dir / "oracle.md"
+
+
 @dataclass(frozen=True)
 class Config:
     llm: LLMConfig
     game: GameConfig
+    memory: MemoryConfig = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        # Allow memory to be omitted in existing call sites; default it here.
+        if self.memory is None:
+            object.__setattr__(self, "memory", MemoryConfig())
 
     @classmethod
     def load(cls, *, dotenv: bool = True) -> "Config":
         if dotenv:
             load_dotenv()
-        return cls(llm=LLMConfig.from_env(), game=GameConfig.from_env())
+        return cls(
+            llm=LLMConfig.from_env(),
+            game=GameConfig.from_env(),
+            memory=MemoryConfig.from_env(),
+        )
