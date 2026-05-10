@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from slay2agent.agent.oracle_updater import run_oracle_updater
 from slay2agent.agent.skill_creator import run_skill_creator
 from slay2agent.agent.tool_bridge import LoopDetected, LoopDetector, ToolBridge
 from slay2agent.agent.trace import (
@@ -96,6 +97,24 @@ class RunConfig:
     runs_dir: Path = field(default_factory=lambda: Path("runs"))
     window_size: int = _DEFAULT_WINDOW_SIZE
     repeat_threshold: int = _DEFAULT_REPEAT_THRESHOLD
+
+
+def _build_run_trace_summary(
+    total_steps: int,
+    termination_reason: str,
+    tracker: UsageTracker,
+) -> str:
+    """Compact text summary of the completed run for oracle_updater context."""
+    usage = tracker.role_totals()
+    main_u = usage.get("main")
+    sc_u = usage.get("skill_creator")
+    return "\n".join([
+        "Run summary (for oracle_updater context):",
+        f"- Total agent steps: {total_steps}",
+        f"- Termination reason: {termination_reason}",
+        f"- Main agent tokens used: {(main_u.input_tokens + main_u.output_tokens) if main_u else 0}",
+        f"- Skill creator tokens used: {(sc_u.input_tokens + sc_u.output_tokens) if sc_u else 0}",
+    ])
 
 
 def _build_system_prompt(
@@ -445,7 +464,18 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
             extra_summary["error"] = str(exc)
 
         finally:
-            # F-008c: oracle_updater would fire here.
+            # F-008c: oracle_updater fires at run end (before writing summary)
+            run_oracle_updater(
+                run_trace_summary=_build_run_trace_summary(step, termination_reason, tracker),
+                skill_registry=skill_registry,
+                oracle_path=oracle_path,
+                adapter=adapter,
+                tracker=tracker,
+                trace=trace,
+                model=cfg.llm.model,
+                termination_reason=termination_reason,
+                oracle_max_tokens=cfg.memory.oracle_max_tokens,
+            )
             trace.write_summary(
                 termination_reason=termination_reason,
                 tracker=tracker,

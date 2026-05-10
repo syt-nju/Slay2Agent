@@ -67,6 +67,7 @@ class MemoryConfig:
     """Paths for the L1/L2 memory layer (skill library + oracle)."""
 
     agent_state_dir: Path = Path(DEFAULT_AGENT_STATE_DIR)
+    oracle_max_tokens: int = 4000
 
     @classmethod
     def from_env(cls) -> "MemoryConfig":
@@ -74,6 +75,7 @@ class MemoryConfig:
             agent_state_dir=Path(
                 os.getenv("AGENT_STATE_DIR", DEFAULT_AGENT_STATE_DIR)
             ),
+            oracle_max_tokens=int(os.getenv("ORACLE_MAX_TOKENS", "4000")),
         )
 
     @property
