@@ -98,6 +98,8 @@ class RunConfig:
 
 def _build_system_prompt(
     *,
+    character: str,
+    ascension: int,
     skill_metadata_list: list[str],
     oracle_content: str,
 ) -> str:
@@ -106,7 +108,11 @@ def _build_system_prompt(
     In F-005 (pre-F-008a) both lists are empty/empty-string; the structure is
     already correct so F-008a just fills them in.
     """
-    parts = [_SYSTEM_PREAMBLE.strip()]
+    preamble = _SYSTEM_PREAMBLE.strip().replace(
+        "select Ironclad at Ascension 0",
+        f"select {character} at Ascension {ascension}",
+    )
+    parts = [preamble]
 
     if oracle_content:
         parts.append("\n## Oracle (global strategy)\n" + oracle_content)
@@ -202,6 +208,8 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
 
                 # ── Assemble system prompt ───────────────────────────────────
                 system_content = _build_system_prompt(
+                    character=run_cfg.character,
+                    ascension=run_cfg.ascension,
                     skill_metadata_list=[],   # F-008a will fill this
                     oracle_content="",        # F-008a will fill this
                 )
@@ -229,19 +237,39 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
                     action_name = tool_call.name
                     action_args = tool_call.arguments
 
+                    # Warn if the LLM returned multiple tool_calls — we only
+                    # execute the first one.  We must still append stub tool
+                    # responses for ALL tool_call_ids to keep the OpenAI
+                    # message format valid (an assistant message with
+                    # tool_calls must be followed by one tool message per id).
+                    extra_calls = assistant_msg.tool_calls[1:]
+                    if extra_calls:
+                        logger.warning(
+                            "LLM returned %d extra tool_calls at step %d — "
+                            "only the first (%r) will be executed",
+                            len(extra_calls), step, action_name,
+                        )
+
                     try:
                         result_raw = bridge.execute(state_type, action_name, action_args)
                         result_parsed = parse(result_raw)
                         tool_result_state_type = result_parsed.state_type
                         settled_summary = to_compact_prompt(result_parsed)
 
-                        # Append to L0: assistant message + tool result.
+                        # Append to L0: assistant message + tool results for
+                        # every tool_call_id (extras get a stub notice).
                         l0.append(assistant_msg)
                         l0.append(Message(
                             role="tool",
                             content=settled_summary,
                             tool_call_id=tool_call.id,
                         ))
+                        for extra in extra_calls:
+                            l0.append(Message(
+                                role="tool",
+                                content="(skipped — only one tool call is executed per step)",
+                                tool_call_id=extra.id,
+                            ))
 
                     except LoopDetected as exc:
                         logger.error("loop_detector fired: %s", exc)
@@ -282,6 +310,12 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
                             content=f"ERROR: {exc}",
                             tool_call_id=tool_call.id,
                         ))
+                        for extra in extra_calls:
+                            l0.append(Message(
+                                role="tool",
+                                content="(skipped — only one tool call is executed per step)",
+                                tool_call_id=extra.id,
+                            ))
 
                     except ValueError as exc:
                         # Gate rejection.
@@ -292,6 +326,12 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
                             content=f"ERROR: {exc}",
                             tool_call_id=tool_call.id,
                         ))
+                        for extra in extra_calls:
+                            l0.append(Message(
+                                role="tool",
+                                content="(skipped — only one tool call is executed per step)",
+                                tool_call_id=extra.id,
+                            ))
 
                 else:
                     # LLM returned text only (tool_choice=required should prevent this,
