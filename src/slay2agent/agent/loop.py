@@ -54,11 +54,11 @@ _AGENT_ROLE: AgentRole = "main"
 
 # System prompt preamble — injected every LLM call.
 _SYSTEM_PREAMBLE = """You are an expert player of Slay the Spire 2.
-Your job is to navigate the game from the main menu, select Ironclad at Ascension 0, and play until game_over or until you are told to stop.
+The character and ascension level have already been selected for you. Your job is to play the run until game_over or until you are told to stop.
 
 Rules:
 - Always call exactly one tool per response. Never reply with plain text only.
-- Use menu_select to navigate menus (main menu, character select, singleplayer, ascension).
+- Use menu_select to navigate any remaining menu screens (e.g. ascension selection).
 - In combat, play cards or end_turn. Spend energy efficiently.
 - On the map, choose_map_node to advance.
 - On rewards/card_reward, claim what is useful or skip.
@@ -98,21 +98,11 @@ class RunConfig:
 
 def _build_system_prompt(
     *,
-    character: str,
-    ascension: int,
     skill_metadata_list: list[str],
     oracle_content: str,
 ) -> str:
-    """Assemble the full system prompt from preamble + memory injections.
-
-    In F-005 (pre-F-008a) both lists are empty/empty-string; the structure is
-    already correct so F-008a just fills them in.
-    """
-    preamble = _SYSTEM_PREAMBLE.strip().replace(
-        "select Ironclad at Ascension 0",
-        f"select {character} at Ascension {ascension}",
-    )
-    parts = [preamble]
+    """Assemble the full system prompt from preamble + memory injections."""
+    parts = [_SYSTEM_PREAMBLE.strip()]
 
     if oracle_content:
         parts.append("\n## Oracle (global strategy)\n" + oracle_content)
@@ -123,6 +113,32 @@ def _build_system_prompt(
         parts.append("\n## Available Skills\n(none yet)")
 
     return "\n".join(parts)
+
+
+from slay2agent.game.action_schemas import dispatch
+
+
+def _navigate_to_run_start(client: GameClient, character: str) -> None:
+    """Hard-navigate from main menu → character confirmed → ready for ascension.
+
+    This runs before the agent loop so the LLM never has to decide which
+    character to pick.  The sequence is:
+        main menu → singleplayer → standard → select <character>
+        → confirm → embark
+    Each step calls dispatch which blocks until the game state settles.
+    If the game is already past the main menu this will likely raise an
+    ActionError; the caller lets that propagate.
+    """
+    steps = [
+        ("menu_select", {"option": "singleplayer"}),
+        ("menu_select", {"option": "standard"}),
+        ("menu_select", {"option": character}),
+        ("menu_select", {"option": "confirm"}),
+        ("menu_select", {"option": "embark"}),
+    ]
+    for action, args in steps:
+        logger.info("pre-loop nav: %s %s", action, args)
+        dispatch(client, action, args)
 
 
 def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
@@ -156,6 +172,9 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
 
     with GameClient(cfg.game.base_url, timeout=cfg.game.timeout) as client:
         bridge = ToolBridge(client=client, loop_detector=loop_detector)
+
+        # Hard-navigate to run start before handing control to the agent.
+        _navigate_to_run_start(client, run_cfg.character)
 
         # L0: in-context conversation history (cleared on state_type change).
         l0: list[Message] = []
@@ -208,13 +227,17 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
 
                 # ── Assemble system prompt ───────────────────────────────────
                 system_content = _build_system_prompt(
-                    character=run_cfg.character,
-                    ascension=run_cfg.ascension,
                     skill_metadata_list=[],   # F-008a will fill this
                     oracle_content="",        # F-008a will fill this
                 )
                 system_msg = Message(role="system", content=system_content)
-                user_msg = Message(role="user", content=compact)
+
+                # On the very first step, append an ascension hint so the agent
+                # selects the configured difficulty level.
+                user_content = compact
+                if step == 0 and run_cfg.ascension >= 0:
+                    user_content += f"\n\n(Hint: please select Ascension {run_cfg.ascension}.)"
+                user_msg = Message(role="user", content=user_content)
 
                 full_messages = [system_msg] + l0 + [user_msg]
                 tools = bridge.visible_tools(state_type)
