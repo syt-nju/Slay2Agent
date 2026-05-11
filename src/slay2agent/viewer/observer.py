@@ -44,6 +44,12 @@ class RunObserver(Protocol):
         detail: str,
     ) -> None: ...
 
+    def on_context_update(
+        self,
+        oracle_content: str,
+        skill_summaries: list[dict[str, str]],
+    ) -> None: ...
+
     def on_run_end(
         self,
         termination_reason: str,
@@ -64,6 +70,9 @@ class NoOpObserver:
         pass
 
     def on_memory_event(self, event_type: str, detail: str) -> None:
+        pass
+
+    def on_context_update(self, oracle_content: str, skill_summaries: list[dict[str, str]]) -> None:
         pass
 
     def on_run_end(self, termination_reason: str, total_steps: int) -> None:

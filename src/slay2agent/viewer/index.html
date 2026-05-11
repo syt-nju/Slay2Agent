@@ -369,6 +369,20 @@ function connect() {
     appendToCard('Tool Result', `${d.action}: ${d.result_summary}`);
   });
 
+  es.addEventListener('context_update', (e) => {
+    const d = JSON.parse(e.data);
+    const oracleEl = document.getElementById('oracle-content');
+    oracleEl.textContent = d.oracle_content || '(empty)';
+    const skillsEl = document.getElementById('skills-content');
+    if (d.skills && d.skills.length > 0) {
+      skillsEl.innerHTML = d.skills.map(s =>
+        `<div class="skill-item"><strong>${esc(s.id)}</strong>: ${esc(s.name)}<br><em>${esc(s.description)}</em></div>`
+      ).join('');
+    } else {
+      skillsEl.textContent = '(no skills loaded)';
+    }
+  });
+
   es.addEventListener('memory_event', (e) => {
     const d = JSON.parse(e.data);
     addMemoryEvent(d.event_type, d.detail);

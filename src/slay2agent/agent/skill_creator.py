@@ -32,6 +32,7 @@ from slay2agent.llm.retry import call_with_retry
 from slay2agent.llm.usage import UsageTracker
 from slay2agent.memory.oracle import read_oracle
 from slay2agent.memory.skill_registry import SkillRegistry
+from slay2agent.viewer.observer import NoOpObserver, RunObserver
 
 logger = logging.getLogger(__name__)
 
@@ -248,6 +249,7 @@ def run_skill_creator(
     prev_state_type: str,
     new_state_type: str,
     max_steps: int = 12,
+    observer: RunObserver | None = None,
 ) -> None:
     """Run the skill_creator sub-agent for a completed gameplay segment.
 
@@ -268,6 +270,8 @@ def run_skill_creator(
         new_state_type: state_type the game transitioned into.
         max_steps: Safety limit on tool-call rounds (default 12).
     """
+    if observer is None:
+        observer = NoOpObserver()
     trigger = f"{prev_state_type} → {new_state_type}"
     logger.info("skill_creator: triggered by %s, L0 len=%d", trigger, len(prev_l0))
 
@@ -314,6 +318,7 @@ def run_skill_creator(
             if tool_call.name in ("write_skill", "delete_skill"):
                 sid = tool_call.arguments.get("skill_id", "?")
                 file_changes.append(f"{tool_call.name}({sid})")
+                observer.on_memory_event("skill_updated" if tool_call.name == "write_skill" else "skill_deleted", sid)
 
             conversation.append(Message(
                 role="tool",

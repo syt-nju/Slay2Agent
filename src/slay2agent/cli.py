@@ -86,27 +86,19 @@ def _cmd_play(args: argparse.Namespace) -> int:
 
     observer = None
     live_server = None
+    shared_tracker = None
     if args.live:
         from slay2agent.llm.usage import UsageTracker
         from slay2agent.viewer.server import LiveServer, WebObserver
 
-        # The tracker used here is only for the live server to read;
-        # the real tracker lives inside run_demo_loop.  We pass the observer
-        # and let the loop push events — usage is fetched via /usage endpoint
-        # from the tracker that run_demo_loop owns.  To share the tracker we
-        # create it here and pass it into both the observer and loop (via a
-        # small patch: the loop returns its tracker via a closure-accessible ref).
-        # Simpler approach: WebObserver receives usage via on_llm_response events
-        # and the /usage endpoint fetches from the loop's tracker periodically.
-        # For now, we start with a dummy tracker and update via SSE events.
-        _tracker = UsageTracker()
-        observer = WebObserver(_tracker)
-        live_server = LiveServer(observer, _tracker, port=args.live_port)
+        shared_tracker = UsageTracker()
+        observer = WebObserver(shared_tracker)
+        live_server = LiveServer(observer, shared_tracker, port=args.live_port)
         url = live_server.start()
         print(f"Live viewer: {url}")
 
     try:
-        run_dir = run_demo_loop(cfg, run_cfg, observer=observer)
+        run_dir = run_demo_loop(cfg, run_cfg, observer=observer, tracker=shared_tracker)
         print(f"Run complete. Trace written to: {run_dir}")
         return 0
     except Exception as exc:

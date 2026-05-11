@@ -35,6 +35,7 @@ from slay2agent.llm.retry import call_with_retry
 from slay2agent.llm.usage import UsageTracker
 from slay2agent.memory.oracle import read_oracle
 from slay2agent.memory.skill_registry import SkillRegistry
+from slay2agent.viewer.observer import NoOpObserver, RunObserver
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +163,7 @@ def run_oracle_updater(
     termination_reason: str,
     oracle_max_tokens: int = 4000,
     max_steps: int = 8,
+    observer: RunObserver | None = None,
 ) -> None:
     """Run the oracle_updater sub-agent at the end of a run.
 
@@ -183,6 +185,8 @@ def run_oracle_updater(
         oracle_max_tokens: Soft token limit for oracle.md (default 4000).
         max_steps: Safety limit on tool-call rounds (default 8).
     """
+    if observer is None:
+        observer = NoOpObserver()
     trigger = f"run_end:{termination_reason}"
     logger.info("oracle_updater: triggered by %s", trigger)
 
@@ -262,6 +266,8 @@ def run_oracle_updater(
 
         # Write oracle (skips on empty content).
         wrote_oracle = _write_oracle_safe(oracle_path, new_oracle_text, max_chars)
+        if wrote_oracle:
+            observer.on_memory_event("oracle_rewritten", f"{len(new_oracle_text)} chars")
 
         trace.write_subagent(
             SubagentRecord(

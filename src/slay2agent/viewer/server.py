@@ -14,8 +14,6 @@ import json
 import logging
 import queue
 import threading
-import time
-from functools import partial
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
@@ -71,6 +69,12 @@ class WebObserver:
         self._push("memory_event", {
             "event_type": event_type,
             "detail": detail,
+        })
+
+    def on_context_update(self, oracle_content: str, skill_summaries: list[dict[str, str]]) -> None:
+        self._push("context_update", {
+            "oracle_content": oracle_content,
+            "skills": skill_summaries,
         })
 
     def on_run_end(self, termination_reason: str, total_steps: int) -> None:

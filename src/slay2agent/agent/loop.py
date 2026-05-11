@@ -174,6 +174,7 @@ def run_demo_loop(
     cfg: Config,
     run_cfg: RunConfig,
     observer: RunObserver | None = None,
+    tracker: UsageTracker | None = None,
 ) -> Path:
     """Run the Phase 1 demo loop.
 
@@ -188,10 +189,11 @@ def run_demo_loop(
     """
     if observer is None:
         observer = NoOpObserver()
+    if tracker is None:
+        tracker = UsageTracker()
     run_id = new_run_id()
     run_dir = run_cfg.runs_dir / run_id
     trace = TraceWriter(run_dir)
-    tracker = UsageTracker()
 
     api_key = cfg.llm.require_api_key()
     adapter = OpenRouterAdapter(cfg.llm.model, api_key, timeout=cfg.llm.timeout)
@@ -262,6 +264,7 @@ def run_demo_loop(
                             model=cfg.llm.model,
                             prev_state_type=prev_state_type,
                             new_state_type=state_type,
+                            observer=observer,
                         )
                     # Reset loop detector so actions from one screen don't
                     # pollute the window for the next.
@@ -321,8 +324,13 @@ def run_demo_loop(
                 full_messages = [system_msg] + l0 + [user_msg]
                 tools = bridge.visible_tools(state_type, is_play_phase=is_play_phase)
 
-                # ── Observer: step start ──────────────────────────────────────
+                # ── Observer: step start + context ────────────────────────────
                 observer.on_step_start(step, state_type, user_content, f"skills={len(skill_meta_lines)} oracle_ver={oracle_ver}")
+                observer.on_context_update(
+                    oracle_content,
+                    [{"id": s.skill_id, "name": s.name, "description": s.description}
+                     for s in skill_registry.list_skills()],
+                )
 
                 # ── LLM call ─────────────────────────────────────────────────
                 resp = call_with_retry(
@@ -484,6 +492,7 @@ def run_demo_loop(
             logger.error("unhandled error in run loop: %s", exc, exc_info=True)
             termination_reason = "error"
             extra_summary["error"] = str(exc)
+            observer.on_run_end("error", step)
 
         finally:
             # F-008c: oracle_updater fires at run end (before writing summary)
@@ -497,6 +506,7 @@ def run_demo_loop(
                 model=cfg.llm.model,
                 termination_reason=termination_reason,
                 oracle_max_tokens=cfg.memory.oracle_max_tokens,
+                observer=observer,
             )
             # Snapshot post-run memory (oracle + skills) into the run dir so
             # each trace carries an immutable record of what the next run will
