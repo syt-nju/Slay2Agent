@@ -16,3 +16,4 @@ __pycache__/
 
 # Local-only references (mod docs, scratch, etc.)
 vendor/
+agent_state/

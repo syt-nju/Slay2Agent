@@ -668,7 +668,8 @@ def _render_combat(state: ParsedState, view: CombatView) -> str:
     lines.append(_fmt_player_header(p, in_combat=True))
     if p and p.status:
         lines.append(f"Player status: {_fmt_status_list(p.status)}")
-    lines.append(f"Round {view.round} | Turn {view.turn} | PlayPhase {view.is_play_phase}")
+    phase_label = "YOUR TURN — you may play cards or end_turn" if view.is_play_phase else "ENEMY TURN — wait, do NOT play cards or end_turn"
+    lines.append(f"Round {view.round} | {phase_label}")
     lines.append(f"Relics: {_fmt_relics(p.relics) if p else '(none)'}")
     if p:
         lines.append(f"Potions: {_fmt_potions(p.potions, p.max_potion_slots)}")

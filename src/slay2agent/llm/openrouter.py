@@ -150,6 +150,7 @@ class OpenRouterAdapter(LLMAdapter):
         if tools and tool_choice != "none":
             kwargs["tools"] = _to_openai_tools(tools)
             kwargs["tool_choice"] = tool_choice
+            kwargs["parallel_tool_calls"] = False
         if max_output_tokens is not None:
             kwargs["max_tokens"] = max_output_tokens
         if temperature is not None:

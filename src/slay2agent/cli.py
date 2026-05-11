@@ -129,12 +129,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--runs-dir", default="runs", help="Directory to write run traces (default: runs/)."
     )
     p_play.add_argument(
-        "--window-size", type=int, default=10,
-        help="Loop detector window size (default: 10).",
+        "--window-size", type=int, default=12,
+        help="Loop detector window size (default: 12).",
     )
     p_play.add_argument(
-        "--repeat-threshold", type=int, default=4,
-        help="Loop detector repeat threshold (default: 4).",
+        "--repeat-threshold", type=int, default=6,
+        help="Loop detector repeat threshold (default: 6).",
     )
     p_play.set_defaults(func=_cmd_play)
 

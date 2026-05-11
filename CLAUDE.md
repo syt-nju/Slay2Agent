@@ -10,10 +10,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Run the application
-python3 main.py
+uv run python main.py
+
+# Run tests
+uv run pytest tests/
+
+# Run CLI
+uv run slay2agent
 ```
 
-No build, lint, or test tooling is configured yet. To add dependencies, update the `dependencies` list in `pyproject.toml`.
+**Always use `uv run` to execute Python scripts, tests, and CLI commands.** Do not use `python3` directly.
+
+To add dependencies, update the `dependencies` list in `pyproject.toml`.
 
 ## Architecture
 
