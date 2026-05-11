@@ -132,8 +132,8 @@ trace 是 memory 设计迭代的唯一研究素材,必须在 F-008 之前可用�
 
 **Acceptance criteria**
 
-- skill 以文件形式存放在固定 memory dir(具体路径由 framework-design 定义)。
-- 每个 skill 含 metadata(目标 ≤ 几十 token,描述用途与触发场景)和 body(详细策略文本)。
+- skill 以文件形式存放在固定 memory dir(具体路径由 framework-design 定义),格式对齐 mainstream Claude Code / Cursor `.cursor/skills/*/SKILL.md` 约定。
+- 每个 skill 文件 = YAML frontmatter (`name` + `description`) + 自包含的 markdown body。`description` 是注入主 agent 的唯一触发信号,必须同时表达"做什么"与"何时使用"(pattern: `<summary>. Use when <trigger>.`)。
 - 主 agent 每步 system prompt 强制注入:全部 skill 的 metadata 列表 + 当前 `oracle.md` 全文。
 - 主 agent 暴露两个 memory 工具:`list_skills()`、`read_skill(skill_id)`。**无 write、无 python exec、无 compact**。
 - skill 文件格式应允许人工编辑,以便研究者直接调整。
@@ -170,9 +170,40 @@ trace 是 memory 设计迭代的唯一研究素材,必须在 F-008 之前可用�
 - **不能修改 skill 库**。
 - 失败时记录 `logger.error(...)` 并保留上一版 `oracle.md`。
 
+### F-009 Live Context Viewer
+
+**Status:** implemented
+
+**动机:** 目前 Agent 运行时唯一的观察手段是事后翻 `steps.jsonl`。研究者需要在 run 过程中实时看到模型拿到的上下文,直观感受记忆系统的效果。
+
+**Acceptance criteria**
+
+- `slay2agent play --live` 启动时,在后台 daemon 线程启动本地 HTTP server,终端打印访问地址(如 `http://localhost:8765`);不加 `--live` 时行为与现有完全一致,零开销。
+- 页面通过 SSE (`text/event-stream`) 接收实时事件,无需手动刷新。
+- **主面板 — 对话流:** 每一步展示:
+  - 当前 step 序号、`state_type`
+  - User message(compact game state)完整内容
+  - 模型的响应(选择的 tool call + 参数)
+  - Tool 执行结果摘要(settle 后的 state 摘要)
+- **侧边栏 — 记忆状态:**
+  - Oracle:显示版本/长度摘要,点击展开查看完整 `oracle.md` 内容
+  - Skill 列表:显示所有 skill 的 id + name,点击展开查看完整 body
+- **记忆事件模块:** 两个小指示器分别对应 skill_creator 和 oracle_updater,触发时高亮并显示简要结果(如"updated skill: xxx"或"oracle rewritten")。
+- **Token 用量模块:** 显示三类 agent 的累计 input/output token,每 60 秒自动更新。
+- 对 `loop.py` 的侵入最小化:通过 observer 协议解耦,loop 只在关键节点调用 `observer.on_xxx()`,不改变核心逻辑。
+- **零新依赖:** HTTP server 用 Python stdlib (`http.server` + `threading`),前端用原生 `EventSource` + vanilla JS,前端为项目内单个 HTML 文件。
+- 一次只支持一个 run 的实时查看。
+
+**不做:**
+
+- 不做事后回放 / trace 文件加载。
+- 不做多 run 并发查看。
+- 不做前端 build pipeline(无 npm/node)。
+- 不做用户从浏览器操控 Agent。
+
 ## Open Questions
 
-- skill metadata 的最小字段集(`name` / `description` 之外是否再加 `when_to_read` / `examples` / `tags`)→ F-008a 实施时基于真实使用反推。
+- skill metadata 是否需要在 `name` + `description` 之外再加 `examples` / `tags` / `applicable_state_types` 等结构化字段 → v1 起对齐 mainstream,只保留 `name` + `description`(`description` 自带 "use when ..." 触发条件);后续若主 agent 召回不稳定,再考虑加结构化字段。
 - loop detector 的 N 与阈值默认值 → F-006 实施后用实际 trace 估计。
 - skill creator 是否需要"建议"边界(每小关最多写 N 个 skill)→ 首版默认不限,F-008b 跑过后再评估。
 - `oracle.md` 4k tokens 软上限是否合理 → 阶段二第一次跑通后回看 token 占比再调整。

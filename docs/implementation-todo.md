@@ -11,15 +11,16 @@ Execution Mode(除非 memory 设计需要再次重审,届时回 Design Mode)。
 
 ## Feature Order
 
-1. F-002 LLM Adapter ✅(已实施,UsageTracker 按 `(role, model)` 分桶)
-2. F-003 Game Communication Path ✅(已实施 client + 28-action 声明式 schema 表 + dispatch + state-type gate + fixtures)
-3. F-004 State Parser & Compact View ✅(`schema.py` dataclass-based parse + per-view to_compact_prompt;14 fixtures + unknown fallback 全绿)
-4. F-005 Phase 1 Demo Loop
-5. F-006 Tool Bridge & Loop Detector
-6. F-007 Trace & Token Accounting
-7. F-008a Skill Registry + Read Tool
-8. F-008b Skill Creator Sub-agent
-9. F-008c Oracle Updater Sub-agent
+1. F-002 LLM Adapter ✅
+2. F-003 Game Communication Path ✅
+3. F-004 State Parser & Compact View ✅
+4. F-005 Phase 1 Demo Loop ✅
+5. F-006 Tool Bridge & Loop Detector ✅
+6. F-007 Trace & Token Accounting ✅
+7. F-008a Skill Registry + Read Tool ✅
+8. F-008b Skill Creator Sub-agent ✅
+9. F-008c Oracle Updater Sub-agent ✅
+10. F-009 Live Context Viewer ✅
 
 F-005 / F-006 / F-007 互相耦合,会在同一个 phase 内推进:demo loop 走通必须有 tool bridge + trace。F-008a 是 F-008b/c 的硬前置(没有 skill 文件结构,sub-agent 无处写)。
 
@@ -120,6 +121,37 @@ Expected verification (已完成):
 - ✅ 一次完整 run 后，`runs/<run_id>/summary.json` 三类 agent token 都非零
 - ✅ skill 库被 skill creator 真实修改；`oracle.md` 在 run 结束后被改写
 - ✅ skill creator 的 reasoning 中观察到"先 list_skills → read_skill → write_skill"的流程
+
+## Phase 4 — Live Context Viewer (F-009) ✅
+
+### F-009a Observer 协议 + loop 挂载 ✅
+
+- [x] 定义 `RunObserver` Protocol(`on_step_start` / `on_llm_response` / `on_tool_result` / `on_memory_event` / `on_run_end`)
+- [x] 实现 `NoOpObserver`(默认,零开销)
+- [x] `run_demo_loop` 接受 `observer` 参数,在 6 个关键节点加 emit 调用
+- [x] 确认不加 `--live` 时与现有行为完全一致(234 tests pass)
+
+### F-009b Web Server + SSE ✅
+
+- [x] `src/slay2agent/viewer/server.py`:stdlib `http.server` + daemon 线程
+- [x] SSE endpoint (`/events`):从 `queue.Queue` 读事件,推 `text/event-stream`
+- [x] 静态文件 serve(`index.html`)
+- [x] `WebObserver` 实现 `RunObserver`,将事件序列化写入 queue
+- [x] `/usage` JSON endpoint 供前端定时拉取 token snapshot
+
+### F-009c 前端页面 ✅
+
+- [x] `src/slay2agent/viewer/index.html`:单文件,vanilla JS + CSS
+- [x] 左侧主面板:对话流时间线(step / state_type / user message / tool call / result)
+- [x] 右侧侧边栏:oracle 可点击展开 + skill 列表可点击展开
+- [x] 记忆事件指示器:skill_creator / oracle_updater 触发时 flash 动画高亮
+- [x] token 用量模块:三类 agent 累计 input/output,每 30s 自动刷新
+
+### F-009d CLI 集成 ✅
+
+- [x] `slay2agent play` 增加 `--live` / `--live-port` flags
+- [x] `--live` 时启动 `WebObserver` + HTTP server,终端打印访问地址
+- [x] server 在 run 结束后保持 30s 供最终查看,然后优雅关闭
 
 ## 持续任务 — Memory Iteration Log
 

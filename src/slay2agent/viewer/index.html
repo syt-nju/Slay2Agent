@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>slay2agent — Live Context Viewer</title>
+<style>
+:root {
+  --bg: #1a1a2e;
+  --surface: #16213e;
+  --surface2: #0f3460;
+  --accent: #e94560;
+  --text: #eaeaea;
+  --text-dim: #8892b0;
+  --green: #64ffda;
+  --yellow: #ffd93d;
+  --border: #233554;
+  --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+}
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  height: 100vh;
+}
+header {
+  grid-column: 1 / -1;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+header h1 { font-size: 16px; font-weight: 600; }
+header .status {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: var(--surface2);
+}
+header .status.connected { color: var(--green); }
+header .status.disconnected { color: var(--accent); }
+
+/* Main panel */
+.main-panel {
+  overflow-y: auto;
+  padding: 16px;
+}
+.step-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  padding: 12px 16px;
+}
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.step-num {
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--surface2);
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: var(--green);
+  font-family: var(--mono);
+}
+.state-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.step-section { margin-top: 8px; }
+.step-section-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+.step-content {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--bg);
+  border-radius: 4px;
+}
+.tool-call {
+  color: var(--yellow);
+  font-weight: 600;
+}
+
+/* Sidebar */
+.sidebar {
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.sidebar-section {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+.sidebar-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.sidebar-title:hover { color: var(--green); }
+.expandable-content {
+  display: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  max-height: 300px;
+  overflow-y: auto;
+  color: var(--text-dim);
+}
+.expandable-content.open { display: block; }
+
+.memory-event {
+  font-size: 11px;
+  padding: 4px 8px;
+  margin-top: 4px;
+  border-radius: 4px;
+  background: var(--surface2);
+  color: var(--green);
+  animation: flash 1s ease-out;
+}
+@keyframes flash {
+  0% { background: var(--accent); color: #fff; }
+  100% { background: var(--surface2); color: var(--green); }
+}
+
+/* Token usage */
+.usage-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+  font-size: 11px;
+  font-family: var(--mono);
+}
+.usage-cell {
+  text-align: center;
+  padding: 6px 4px;
+  background: var(--surface);
+  border-radius: 4px;
+}
+.usage-cell .label {
+  color: var(--text-dim);
+  font-size: 10px;
+  display: block;
+  margin-bottom: 2px;
+}
+.usage-cell .value { color: var(--green); font-weight: 600; }
+
+.skill-item {
+  font-size: 11px;
+  padding: 4px 8px;
+  margin-top: 4px;
+  border-radius: 4px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.skill-item:hover { background: var(--surface2); }
+.skill-body {
+  display: none;
+  margin-top: 4px;
+  padding: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.run-end-banner {
+  background: var(--surface2);
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  font-weight: 700;
+  color: var(--accent);
+}
+</style>
+</head>
+<body>
+<div class="layout">
+  <header>
+    <h1>slay2agent Live</h1>
+    <span class="status disconnected" id="conn-status">disconnected</span>
+    <span style="margin-left:auto; font-size:12px; color:var(--text-dim)" id="step-counter">step: —</span>
+  </header>
+
+  <div class="main-panel" id="main-panel"></div>
+
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-title" onclick="toggleSection('oracle-content')">Oracle ▸</div>
+      <div class="expandable-content" id="oracle-content">(waiting for data...)</div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title" onclick="toggleSection('skills-content')">Skills ▸</div>
+      <div id="skills-content" class="expandable-content">(no skills loaded)</div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">Memory Events</div>
+      <div id="memory-events"></div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">Token Usage</div>
+      <div class="usage-grid" id="usage-grid">
+        <div class="usage-cell"><span class="label">main in</span><span class="value" id="u-main-in">0</span></div>
+        <div class="usage-cell"><span class="label">main out</span><span class="value" id="u-main-out">0</span></div>
+        <div class="usage-cell"><span class="label">main total</span><span class="value" id="u-main-total">0</span></div>
+        <div class="usage-cell"><span class="label">skill in</span><span class="value" id="u-sc-in">0</span></div>
+        <div class="usage-cell"><span class="label">skill out</span><span class="value" id="u-sc-out">0</span></div>
+        <div class="usage-cell"><span class="label">skill total</span><span class="value" id="u-sc-total">0</span></div>
+        <div class="usage-cell"><span class="label">oracle in</span><span class="value" id="u-ou-in">0</span></div>
+        <div class="usage-cell"><span class="label">oracle out</span><span class="value" id="u-ou-out">0</span></div>
+        <div class="usage-cell"><span class="label">oracle total</span><span class="value" id="u-ou-total">0</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const panel = document.getElementById('main-panel');
+const statusEl = document.getElementById('conn-status');
+const stepCounter = document.getElementById('step-counter');
+const memoryEvents = document.getElementById('memory-events');
+
+let currentCard = null;
+
+function toggleSection(id) {
+  const el = document.getElementById(id);
+  el.classList.toggle('open');
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function fmt(n) {
+  return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+}
+
+function addStepCard(step, stateType, userMessage) {
+  const card = document.createElement('div');
+  card.className = 'step-card';
+  card.innerHTML = `
+    <div class="step-header">
+      <span class="step-num">#${step}</span>
+      <span class="state-badge">${esc(stateType)}</span>
+    </div>
+    <div class="step-section">
+      <div class="step-section-label">Game State</div>
+      <div class="step-content">${esc(userMessage)}</div>
+    </div>
+  `;
+  panel.appendChild(card);
+  currentCard = card;
+  panel.scrollTop = panel.scrollHeight;
+  stepCounter.textContent = `step: ${step}`;
+}
+
+function appendToCard(label, content, cls) {
+  if (!currentCard) return;
+  const sec = document.createElement('div');
+  sec.className = 'step-section';
+  sec.innerHTML = `
+    <div class="step-section-label">${esc(label)}</div>
+    <div class="step-content ${cls || ''}">${esc(content)}</div>
+  `;
+  currentCard.appendChild(sec);
+  panel.scrollTop = panel.scrollHeight;
+}
+
+function updateUsage(snapshot) {
+  function set(role, prefix) {
+    const models = snapshot[role] || {};
+    let inp = 0, out = 0;
+    for (const m of Object.values(models)) { inp += m.input || 0; out += m.output || 0; }
+    document.getElementById(prefix + '-in').textContent = fmt(inp);
+    document.getElementById(prefix + '-out').textContent = fmt(out);
+    document.getElementById(prefix + '-total').textContent = fmt(inp + out);
+  }
+  set('main', 'u-main');
+  set('skill_creator', 'u-sc');
+  set('oracle_updater', 'u-ou');
+}
+
+function addMemoryEvent(type, detail) {
+  const el = document.createElement('div');
+  el.className = 'memory-event';
+  el.textContent = `${type}: ${detail}`;
+  memoryEvents.prepend(el);
+  // Keep at most 20
+  while (memoryEvents.children.length > 20) {
+    memoryEvents.removeChild(memoryEvents.lastChild);
+  }
+}
+
+// SSE connection
+let es;
+function connect() {
+  es = new EventSource('/events');
+  es.onopen = () => {
+    statusEl.textContent = 'connected';
+    statusEl.className = 'status connected';
+  };
+  es.onerror = () => {
+    statusEl.textContent = 'disconnected';
+    statusEl.className = 'status disconnected';
+  };
+
+  es.addEventListener('step_start', (e) => {
+    const d = JSON.parse(e.data);
+    addStepCard(d.step, d.state_type, d.user_message);
+  });
+
+  es.addEventListener('llm_response', (e) => {
+    const d = JSON.parse(e.data);
+    const name = d.tool_call_name || '(text only)';
+    const args = d.tool_call_args ? JSON.stringify(d.tool_call_args) : '';
+    appendToCard('LLM Response', `${name}  ${args}`, 'tool-call');
+  });
+
+  es.addEventListener('tool_result', (e) => {
+    const d = JSON.parse(e.data);
+    appendToCard('Tool Result', `${d.action}: ${d.result_summary}`);
+  });
+
+  es.addEventListener('memory_event', (e) => {
+    const d = JSON.parse(e.data);
+    addMemoryEvent(d.event_type, d.detail);
+  });
+
+  es.addEventListener('usage_snapshot', (e) => {
+    updateUsage(JSON.parse(e.data));
+  });
+
+  es.addEventListener('run_end', (e) => {
+    const d = JSON.parse(e.data);
+    const banner = document.createElement('div');
+    banner.className = 'run-end-banner';
+    banner.textContent = `Run ended: ${d.termination_reason} (${d.total_steps} steps)`;
+    panel.appendChild(banner);
+    panel.scrollTop = panel.scrollHeight;
+  });
+}
+
+connect();
+
+// Periodic usage fetch (every 30s)
+setInterval(() => {
+  fetch('/usage')
+    .then(r => r.json())
+    .then(updateUsage)
+    .catch(() => {});
+}, 30000);
+</script>
+</body>
+</html>

@@ -48,6 +48,7 @@ from slay2agent.llm.retry import call_with_retry
 from slay2agent.llm.usage import UsageTracker
 from slay2agent.memory.oracle import oracle_version, read_oracle
 from slay2agent.memory.skill_registry import SkillRegistry
+from slay2agent.viewer.observer import NoOpObserver, RunObserver
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ Rules:
 - Use menu_select to navigate any remaining menu screens (e.g. ascension selection).
 - On the map, choose_map_node to advance.
 - On rewards/card_reward, claim what is useful or skip.
-- list_skills / read_skill give you strategic memory — consult them when unsure.
+- list_skills / read_skill give you strategic memory. Each skill listed below already includes its trigger condition inside the description — call read_skill only when the description matches the current situation.
 - game_over means the run ended; you will be stopped automatically.
 """
 
@@ -169,7 +170,11 @@ def _navigate_to_run_start(client: GameClient, character: str) -> None:
         dispatch(client, action, args)
 
 
-def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
+def run_demo_loop(
+    cfg: Config,
+    run_cfg: RunConfig,
+    observer: RunObserver | None = None,
+) -> Path:
     """Run the Phase 1 demo loop.
 
     Returns the path to the run directory (``runs/<run_id>/``).
@@ -181,6 +186,8 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
 
     All termination paths write ``summary.json`` before returning.
     """
+    if observer is None:
+        observer = NoOpObserver()
     run_id = new_run_id()
     run_dir = run_cfg.runs_dir / run_id
     trace = TraceWriter(run_dir)
@@ -243,6 +250,7 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
                         )
                         l0 = []
                         l0_cleared = True
+                        observer.on_memory_event("L0_cleared", f"{prev_state_type} → {state_type}")
                         # F-008b: run skill creator on the completed segment
                         run_skill_creator(
                             prev_l0=prev_l0_segment,
@@ -276,7 +284,8 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
                 if state_type == "game_over":
                     logger.info("game_over reached — terminating run")
                     termination_reason = "game_over"
-                    # Write a terminal step record without an LLM call.
+                    observer.on_step_start(step, state_type, compact, "")
+                    observer.on_run_end("game_over", step)
                     trace.write_step(StepRecord(
                         step=step,
                         timestamp=_timestamp(),
@@ -312,6 +321,9 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
                 full_messages = [system_msg] + l0 + [user_msg]
                 tools = bridge.visible_tools(state_type, is_play_phase=is_play_phase)
 
+                # ── Observer: step start ──────────────────────────────────────
+                observer.on_step_start(step, state_type, user_content, f"skills={len(skill_meta_lines)} oracle_ver={oracle_ver}")
+
                 # ── LLM call ─────────────────────────────────────────────────
                 resp = call_with_retry(
                     lambda: adapter.chat(full_messages, tools, tool_choice="required")
@@ -319,6 +331,14 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
                 tracker.record(_AGENT_ROLE, resp.model, resp.usage)
 
                 assistant_msg = resp.message
+
+                # ── Observer: LLM response ────────────────────────────────────
+                _tc0 = assistant_msg.tool_calls[0] if assistant_msg.tool_calls else None
+                observer.on_llm_response(
+                    _tc0.name if _tc0 else None,
+                    _tc0.arguments if _tc0 else None,
+                    {"input_tokens": resp.usage.input_tokens, "output_tokens": resp.usage.output_tokens},
+                )
 
                 # ── Dispatch tool call ────────────────────────────────────────
                 tool_call: ToolCall | None = None
@@ -348,6 +368,7 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
                         result_parsed = parse(result_raw)
                         tool_result_state_type = result_parsed.state_type
                         settled_summary = to_compact_prompt(result_parsed)
+                        observer.on_tool_result(action_name, settled_summary[:200])
 
                         # Append to L0: assistant message + tool results for
                         # every tool_call_id (extras get a stub notice).
@@ -367,6 +388,7 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
                     except LoopDetected as exc:
                         logger.error("loop_detector fired: %s", exc)
                         termination_reason = "loop_terminated"
+                        observer.on_run_end("loop_terminated", step)
                         extra_summary["loop_detail"] = {
                             "action": exc.action,
                             "args": exc.args,
