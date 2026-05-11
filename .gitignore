@@ -17,3 +17,6 @@ __pycache__/
 # Local-only references (mod docs, scratch, etc.)
 vendor/
 agent_state/
+
+# Run traces (regenerated every `slay2agent play`)
+runs/
