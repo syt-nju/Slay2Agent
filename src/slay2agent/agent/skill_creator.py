@@ -55,20 +55,32 @@ _WRITE_SKILL_SCHEMA = ToolSchema(
                     "Use the existing skill_id when updating."
                 ),
             },
+            "name": {
+                "type": "string",
+                "description": (
+                    "Human-readable display name shown alongside the skill_id "
+                    "(e.g. 'Ironclad — Early Combat')."
+                ),
+            },
             "description": {
                 "type": "string",
-                "description": "One-line summary shown in every system prompt (≤ 20 words).",
-            },
-            "when_to_read": {
-                "type": "string",
-                "description": "Short hint describing when the agent should read this skill.",
+                "description": (
+                    "SOLE trigger signal injected into every system prompt. "
+                    "MUST describe both WHAT the skill covers AND WHEN to load "
+                    "it. Pattern: '<one-line summary of what>. Use when <concrete "
+                    "trigger condition>.' Aim for 1–3 sentences."
+                ),
             },
             "body": {
                 "type": "string",
-                "description": "Full markdown strategy text — actionable, not a gameplay log.",
+                "description": (
+                    "Full markdown body. Start with a level-1 heading "
+                    "('# <Name>') so it reads as a self-contained SKILL.md. "
+                    "Concise, actionable strategy — NOT a replay of the game log."
+                ),
             },
         },
-        "required": ["skill_id", "description", "when_to_read", "body"],
+        "required": ["skill_id", "name", "description", "body"],
         "additionalProperties": False,
     },
 )
@@ -103,6 +115,24 @@ _SYSTEM_TEMPLATE = """\
 You are the skill curator for a Slay the Spire 2 AI agent.
 You have just observed a completed gameplay segment. Your job is to update the skill library so future runs benefit from what was learned.
 
+Each skill is a single markdown file in agent_state/skills/<skill_id>.md with
+mainstream agent-skill structure (aligned with Claude Code / Cursor SKILL.md):
+
+    ---
+    name: <human-readable display name>
+    description: <what + when-to-use, one to three sentences>
+    ---
+
+    # <Name>
+
+    <markdown body — actionable strategy, NOT a gameplay replay>
+
+The `description` field is the SOLE trigger signal: the main agent only sees
+the skill list + descriptions at inference time, and decides whether to
+`read_skill` based on description alone. So every description MUST encode
+both WHAT the skill covers AND WHEN to load it
+(pattern: "<summary>. Use when <concrete trigger condition>.").
+
 MANDATORY PROCESS — follow this order exactly:
 1. Call list_skills to see what skills already exist.
 2. For each insight you want to record, call read_skill on any skills with similar names or themes.
@@ -115,7 +145,7 @@ Rules:
 - PREFER merging two similar skills over keeping duplicates.
 - Only create a NEW skill for genuinely distinct strategic knowledge not covered elsewhere.
 - skill_id must be snake_case, no spaces, no special characters.
-- Body text should be concise, actionable strategy — NOT a replay of the game log.
+- Body must start with a level-1 heading and be self-contained markdown.
 - Never call write_skill or delete_skill before calling list_skills first.
 - You cannot modify oracle.md.
 {oracle_section}"""
@@ -193,8 +223,8 @@ def _dispatch_tool(
     if action == "write_skill":
         registry.write_skill(
             skill_id=args["skill_id"],
+            name=args["name"],
             description=args["description"],
-            when_to_read=args["when_to_read"],
             body=args["body"],
         )
         return {"ok": True, "skill_id": args["skill_id"]}

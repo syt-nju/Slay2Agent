@@ -1,21 +1,28 @@
 """Skill registry — L1 memory layer (F-008a).
 
-Skills live in ``agent_state/skills/<skill_id>.md``.
-
-File format
------------
-Each skill file is a Markdown document with a YAML frontmatter block::
+Skills live in ``agent_state/skills/<skill_id>.md`` as flat single-file
+markdown documents. The format is aligned with the mainstream agent skill
+convention (Claude Code / Cursor ``.cursor/skills/*/SKILL.md``):
 
     ---
-    description: One-line description shown in every system prompt.
-    when_to_read: Free-text hint for when the agent should read the full body.
+    name: Ironclad — Early Combat
+    description: Strategies for early-floor combat as Ironclad, focusing on
+      exhaustion mechanics and AoE damage cards. Use when playing Ironclad in
+      Act 1 normal/elite fights where the deck is still mostly starter cards.
     ---
+
+    # Ironclad — Early Combat
 
     Full markdown body — only loaded when the agent calls read_skill(skill_id).
 
-The ``skill_id`` is derived from the file stem (e.g. ``combat_basics`` for
-``combat_basics.md``).  File names must be valid Python identifiers or
-alphanumeric-with-hyphens strings; no spaces.
+Frontmatter fields:
+    - ``name``: human-readable display name (free-form).
+    - ``description``: SOLE trigger signal. Must describe both *what* the skill
+      covers AND *when* to load it (mainstream pattern — see e.g.
+      ``.cursor/skills/karparthy-guideline/SKILL.md``).
+
+``skill_id`` is derived from the filename stem (e.g. ``ironclad_early_combat``
+for ``ironclad_early_combat.md``). Filenames are snake_case identifiers.
 
 All public methods return plain Python objects so they are easy to test and
 to serialise into tool responses.
@@ -44,8 +51,8 @@ class SkillMeta:
     """Metadata header for a skill — injected into every system prompt."""
 
     skill_id: str
+    name: str
     description: str
-    when_to_read: str
 
 
 @dataclass(frozen=True)
@@ -53,22 +60,34 @@ class Skill:
     """Full skill including body — only loaded on read_skill() calls."""
 
     skill_id: str
+    name: str
     description: str
-    when_to_read: str
     body: str
 
 
 def _parse_frontmatter(text: str) -> dict[str, str]:
     """Parse a minimal YAML frontmatter block into a dict.
 
-    Only handles simple ``key: value`` lines (no nested keys, no lists).
-    Unknown keys are ignored.  Missing keys return an empty string.
+    Supports ``key: value`` lines plus simple multi-line continuation for
+    long ``description`` blocks (any line that does not contain a colon and
+    is not blank is appended to the previous key's value, joined by a
+    single space).  Unknown keys are ignored.
     """
     result: dict[str, str] = {}
-    for line in text.splitlines():
-        if ":" in line:
+    last_key: str | None = None
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        if not line.strip():
+            last_key = None
+            continue
+        if ":" in line and not line.startswith((" ", "\t")):
             key, _, value = line.partition(":")
-            result[key.strip()] = value.strip()
+            key = key.strip()
+            result[key] = value.strip()
+            last_key = key
+        elif last_key is not None:
+            # Continuation line (indented or follows a known key).
+            result[last_key] = (result[last_key] + " " + line.strip()).strip()
     return result
 
 
@@ -93,8 +112,10 @@ def _load_skill_file(path: Path) -> Skill | None:
 
     return Skill(
         skill_id=skill_id,
+        # Fall back to skill_id when name is missing OR blank — we always want
+        # something printable in metadata_lines.
+        name=fm.get("name") or skill_id,
         description=fm.get("description", ""),
-        when_to_read=fm.get("when_to_read", ""),
         body=body,
     )
 
@@ -124,8 +145,8 @@ class SkillRegistry:
         return [
             SkillMeta(
                 skill_id=s.skill_id,
+                name=s.name,
                 description=s.description,
-                when_to_read=s.when_to_read,
             )
             for s in sorted(self._load().values(), key=lambda s: s.skill_id)
         ]
@@ -142,16 +163,20 @@ class SkillRegistry:
     # ── system-prompt helpers ───────────────────────────────────────────────
 
     def metadata_lines(self) -> list[str]:
-        """Render all skill metadata as compact lines for system prompt injection.
+        """Render skill metadata as compact lines for system-prompt injection.
 
-        Each line is ``[<id>] <description>  (when_to_read: <hint>)``.
+        Each line is ``- [<id>] <name> — <description>``.  The description is
+        the SOLE signal the main agent uses to decide whether to call
+        ``read_skill``, so it must already encode both "what" and "when to
+        use" (mainstream pattern).
+
         Returns an empty list when the skill library is empty.
         """
         metas = self.list_skills()
         if not metas:
             return []
         return [
-            f"[{m.skill_id}] {m.description}  (when_to_read: {m.when_to_read})"
+            f"- [{m.skill_id}] {m.name} — {m.description}"
             for m in metas
         ]
 
@@ -163,8 +188,8 @@ class SkillRegistry:
             "skills": [
                 {
                     "skill_id": m.skill_id,
+                    "name": m.name,
                     "description": m.description,
-                    "when_to_read": m.when_to_read,
                 }
                 for m in self.list_skills()
             ]
@@ -180,8 +205,8 @@ class SkillRegistry:
             }
         return {
             "skill_id": skill.skill_id,
+            "name": skill.name,
             "description": skill.description,
-            "when_to_read": skill.when_to_read,
             "body": skill.body,
         }
 
@@ -190,23 +215,25 @@ class SkillRegistry:
     def write_skill(
         self,
         skill_id: str,
+        name: str,
         description: str,
-        when_to_read: str,
         body: str,
     ) -> None:
         """Create or overwrite a skill file and invalidate cache.
 
         The file is written in the standard frontmatter format so it can be
-        read back by ``_load_skill_file``.
+        read back by ``_load_skill_file``.  The body is written verbatim and
+        should be a self-contained markdown document (start with an ``H1``
+        title so it looks like a proper SKILL.md).
         """
         self._skills_dir.mkdir(parents=True, exist_ok=True)
         path = self._skills_dir / f"{skill_id}.md"
         content = (
             f"---\n"
+            f"name: {name}\n"
             f"description: {description}\n"
-            f"when_to_read: {when_to_read}\n"
             f"---\n\n"
-            f"{body}\n"
+            f"{body.strip()}\n"
         )
         path.write_text(content, encoding="utf-8")
         self._cache = None
@@ -249,6 +276,10 @@ class SkillRegistry:
                 skills[skill.skill_id] = skill
                 logger.debug("skill_registry: loaded skill %r", skill.skill_id)
 
-        logger.info("skill_registry: loaded %d skill(s) from %s", len(skills), self._skills_dir)
+        logger.info(
+            "skill_registry: loaded %d skill(s) from %s",
+            len(skills),
+            self._skills_dir,
+        )
         self._cache = skills
         return self._cache

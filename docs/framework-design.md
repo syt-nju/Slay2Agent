@@ -11,6 +11,7 @@ slay2agent 是 train-free 的研究型 Agent。它不读取画面、不模拟键
 ## Layers
 
 ```text
+Live Context Viewer (--live, browser SSE)  ← optional, observer 模式挂载
 Memory Iteration Log (docs/memory-iteration-log.md)
 Trace (runs/<run_id>/)
 Main Agent Loop  ──┐
@@ -68,9 +69,24 @@ LLM 不直接调用 game action,统一经过 bridge:
 ```text
 agent_state/
   skills/
-    <skill_id>.md       # frontmatter metadata + markdown body
+    <skill_id>.md       # mainstream SKILL.md 格式：name + description frontmatter + markdown body
   oracle.md
 ```
+
+Skill 文件格式对齐 Claude Code / Cursor `.cursor/skills/*/SKILL.md` 约定：
+
+```markdown
+---
+name: <人类可读显示名>
+description: <一两句话，同时说明"做什么"和"何时使用"，主 agent 只凭此字段决定是否 read_skill>
+---
+
+# <Name>
+
+<完整 markdown 正文，read_skill 才会加载>
+```
+
+`description` 是唯一的触发信号，必须自带"use when ..."一类的触发条件，主 agent 看不到额外的 `when_to_read` 字段。
 
 `agent_state/` 由用户通过 git 管理(commit / branch / rollback);代码侧不实现 snapshot 切换。
 
@@ -115,6 +131,34 @@ loop:
 - `summary.json`:终止原因 + 三类 agent 各自 input/output token 总量、调用次数
 
 trace 是后续 memory 设计迭代的研究素材;summary 用于在 `docs/memory-iteration-log.md` 中归档。
+
+### Live Context Viewer
+
+`src/slay2agent/viewer/`:可选的实时观察层,通过 observer 模式与 loop 解耦。
+
+**Observer 协议**
+
+`RunObserver`(`Protocol`):loop.py 在关键节点调用,不加 `--live` 时传入 no-op 实现,零开销。
+
+```text
+on_step_start(step, state_type, user_message, system_summary)
+on_llm_response(tool_call_name, tool_call_args, usage)
+on_tool_result(action, result_summary)
+on_memory_event(event_type, detail)   # L0_cleared / skill_created / skill_updated / oracle_rewritten
+on_usage_snapshot(tracker_snapshot)    # 定时由 viewer 侧拉取
+```
+
+**Web 服务**
+
+- `--live` 时后台 daemon 线程启动 stdlib `http.server`,serve 单个 HTML 文件 + SSE endpoint (`/events`)。
+- observer 实现将事件写入 `queue.Queue`,SSE handler 从 queue 读取并推送。
+- 端口默认 `8765`,可配置。
+
+**前端**
+
+- 单个 HTML 文件(`src/slay2agent/viewer/index.html`),vanilla JS + 原生 `EventSource`。
+- 布局:左侧主面板(对话流时间线)、右侧侧边栏(oracle/skill 可点击展开 + 记忆事件指示器 + token 用量)。
+- 无 npm/node/build step,无新 Python 依赖。
 
 ### Memory Iteration Log
 
@@ -161,10 +205,11 @@ run termination
 - 死循环检测的处理是 *直接终止 run*,不做 recovery。
 - `except` 必须配合 `logger.error(...)`,不允许静默吞掉异常。
 - 任何 memory 设计变更必须在 `docs/memory-iteration-log.md` 留下 entry。
+- Live viewer 通过 observer 协议挂载,不改变 loop 核心逻辑;viewer 故障不阻断 agent 运行。
 
 ## Deferred Decisions
 
-- skill metadata 的最终字段集(`name` + `description` 之外是否加 `when_to_read` / `examples` / `tags`)。
+- skill metadata 是否需要在 `name` + `description` 之外再加结构化字段（`examples` / `tags` / `applicable_state_types` 等）—— v1 起已对齐 mainstream，只保留 `name` + `description`，`description` 自带 "use when ..." 触发条件。
 - skill body 是否需要长度上限。
 - skill creator 是否限制每小关最多写 N 个 skill。
 - `oracle.md` 4k tokens 软上限是否合适。

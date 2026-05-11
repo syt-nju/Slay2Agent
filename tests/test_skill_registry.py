@@ -1,29 +1,41 @@
-"""Tests for F-008a: SkillRegistry and oracle reader."""
+"""Tests for F-008a: SkillRegistry and oracle reader.
+
+Skill format aligned with mainstream agent SKILL.md convention:
+    ---
+    name: <display name>
+    description: <what + when-to-use>
+    ---
+
+    # <Name>
+    <body>
+"""
 
 from __future__ import annotations
 
-import textwrap
 from pathlib import Path
 
-import pytest
-
+from slay2agent.memory.oracle import oracle_version, read_oracle
 from slay2agent.memory.skill_registry import SkillRegistry, _load_skill_file
-from slay2agent.memory.oracle import read_oracle, oracle_version
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
 
 
-def make_skill_file(tmp_path: Path, name: str, description: str, when_to_read: str, body: str) -> Path:
-    content = textwrap.dedent(f"""\
-        ---
-        description: {description}
-        when_to_read: {when_to_read}
-        ---
-
-        {body}
-    """)
-    p = tmp_path / f"{name}.md"
+def make_skill_file(
+    tmp_path: Path,
+    skill_id: str,
+    name: str,
+    description: str,
+    body: str,
+) -> Path:
+    content = (
+        f"---\n"
+        f"name: {name}\n"
+        f"description: {description}\n"
+        f"---\n\n"
+        f"{body}\n"
+    )
+    p = tmp_path / f"{skill_id}.md"
     p.write_text(content, encoding="utf-8")
     return p
 
@@ -33,16 +45,17 @@ def make_skill_file(tmp_path: Path, name: str, description: str, when_to_read: s
 
 def test_load_skill_file_parses_correctly(tmp_path):
     p = make_skill_file(
-        tmp_path, "combat_basics",
-        description="Basic combat strategy",
-        when_to_read="During any combat encounter",
-        body="Always play Strike first.",
+        tmp_path,
+        "combat_basics",
+        name="Combat Basics",
+        description="Basic combat strategy. Use during any combat encounter.",
+        body="# Combat Basics\nAlways play Strike first.",
     )
     skill = _load_skill_file(p)
     assert skill is not None
     assert skill.skill_id == "combat_basics"
-    assert skill.description == "Basic combat strategy"
-    assert skill.when_to_read == "During any combat encounter"
+    assert skill.name == "Combat Basics"
+    assert skill.description == "Basic combat strategy. Use during any combat encounter."
     assert "Always play Strike first." in skill.body
 
 
@@ -60,14 +73,33 @@ def test_load_skill_file_nonexistent(tmp_path):
 
 
 def test_load_skill_file_empty_frontmatter_fields(tmp_path):
-    content = "---\ndescription:\nwhen_to_read:\n---\n\nbody here"
+    content = "---\nname:\ndescription:\n---\n\nbody here"
     p = tmp_path / "empty_meta.md"
     p.write_text(content, encoding="utf-8")
     skill = _load_skill_file(p)
     assert skill is not None
+    # name falls back to skill_id when blank.
+    assert skill.name == "empty_meta"
     assert skill.description == ""
-    assert skill.when_to_read == ""
     assert skill.body == "body here"
+
+
+def test_load_skill_file_multiline_description(tmp_path):
+    """Long description split across indented continuation lines is joined."""
+    content = (
+        "---\n"
+        "name: Multi\n"
+        "description: First sentence describing what.\n"
+        "  Second sentence describing when to use.\n"
+        "---\n\n"
+        "body\n"
+    )
+    p = tmp_path / "multi.md"
+    p.write_text(content, encoding="utf-8")
+    skill = _load_skill_file(p)
+    assert skill is not None
+    assert "First sentence" in skill.description
+    assert "Second sentence" in skill.description
 
 
 # ── SkillRegistry ──────────────────────────────────────────────────────────
@@ -90,8 +122,8 @@ def test_registry_missing_dir(tmp_path):
 def test_registry_loads_multiple_skills(tmp_path):
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
-    make_skill_file(skills_dir, "aaa", "Skill A", "When A", "Body A")
-    make_skill_file(skills_dir, "bbb", "Skill B", "When B", "Body B")
+    make_skill_file(skills_dir, "aaa", "Skill A", "Desc A. Use when A.", "Body A")
+    make_skill_file(skills_dir, "bbb", "Skill B", "Desc B. Use when B.", "Body B")
 
     reg = SkillRegistry(skills_dir)
     metas = reg.list_skills()
@@ -104,12 +136,15 @@ def test_registry_loads_multiple_skills(tmp_path):
 def test_registry_read_skill_found(tmp_path):
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
-    make_skill_file(skills_dir, "combat", "Combat tips", "In combat", "Tip: end turn early.")
+    make_skill_file(
+        skills_dir, "combat", "Combat", "Combat tips. Use in combat.", "Tip: end turn early."
+    )
 
     reg = SkillRegistry(skills_dir)
     skill = reg.read_skill("combat")
     assert skill is not None
     assert skill.skill_id == "combat"
+    assert skill.name == "Combat"
     assert "Tip: end turn early." in skill.body
 
 
@@ -121,27 +156,27 @@ def test_registry_read_skill_not_found(tmp_path):
 
 
 def test_registry_metadata_lines_format(tmp_path):
+    """metadata_lines must surface skill_id + name + description in one line."""
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
-    make_skill_file(skills_dir, "s1", "Do X", "When X happens", "body")
+    make_skill_file(skills_dir, "s1", "Skill One", "Do X. Use when X happens.", "body")
 
     reg = SkillRegistry(skills_dir)
     lines = reg.metadata_lines()
     assert len(lines) == 1
     assert "[s1]" in lines[0]
-    assert "Do X" in lines[0]
-    assert "When X happens" in lines[0]
+    assert "Skill One" in lines[0]
+    assert "Do X. Use when X happens." in lines[0]
 
 
 def test_registry_caches_on_repeated_calls(tmp_path):
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
-    make_skill_file(skills_dir, "x", "X skill", "always", "body x")
+    make_skill_file(skills_dir, "x", "X", "X skill. Use always.", "body x")
 
     reg = SkillRegistry(skills_dir)
     first = reg.list_skills()
-    # Add another file on disk — without reload, cache should still return old result
-    make_skill_file(skills_dir, "y", "Y skill", "always", "body y")
+    make_skill_file(skills_dir, "y", "Y", "Y skill. Use always.", "body y")
     second = reg.list_skills()
     assert len(first) == len(second) == 1  # cache not invalidated
 
@@ -153,24 +188,28 @@ def test_registry_caches_on_repeated_calls(tmp_path):
 def test_registry_list_skills_response(tmp_path):
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
-    make_skill_file(skills_dir, "tip", "A tip", "Whenever", "Full body.")
+    make_skill_file(skills_dir, "tip", "Tip", "A tip. Use whenever.", "Full body.")
 
     reg = SkillRegistry(skills_dir)
     resp = reg.list_skills_response()
     assert "skills" in resp
     assert len(resp["skills"]) == 1
-    assert resp["skills"][0]["skill_id"] == "tip"
-    assert resp["skills"][0]["description"] == "A tip"
+    entry = resp["skills"][0]
+    assert entry["skill_id"] == "tip"
+    assert entry["name"] == "Tip"
+    assert entry["description"] == "A tip. Use whenever."
 
 
 def test_registry_read_skill_response_found(tmp_path):
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
-    make_skill_file(skills_dir, "tip", "A tip", "Whenever", "Full body text.")
+    make_skill_file(skills_dir, "tip", "Tip", "A tip. Use whenever.", "Full body text.")
 
     reg = SkillRegistry(skills_dir)
     resp = reg.read_skill_response("tip")
     assert resp["skill_id"] == "tip"
+    assert resp["name"] == "Tip"
+    assert resp["description"] == "A tip. Use whenever."
     assert "Full body text." in resp["body"]
 
 
@@ -187,7 +226,7 @@ def test_registry_skips_files_without_frontmatter(tmp_path):
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     (skills_dir / "bad.md").write_text("no frontmatter here", encoding="utf-8")
-    make_skill_file(skills_dir, "good", "Good skill", "always", "body")
+    make_skill_file(skills_dir, "good", "Good", "Good skill. Use always.", "body")
 
     reg = SkillRegistry(skills_dir)
     metas = reg.list_skills()

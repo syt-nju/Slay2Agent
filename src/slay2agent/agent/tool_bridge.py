@@ -215,16 +215,17 @@ class ToolBridge:
 _LIST_SKILLS_SCHEMA = ToolSchema(
     name="list_skills",
     description=(
-        "List all available skills with their metadata (id, description, "
-        "when_to_read). Skills contain strategic guidance for specific "
-        "game situations."
+        "List all available skills with their metadata (skill_id, name, "
+        "description). Each description encodes both what the skill covers "
+        "and when to read it — use it to decide whether to load the full "
+        "skill body via read_skill."
     ),
     parameters={"type": "object", "properties": {}, "additionalProperties": False},
 )
 
 _READ_SKILL_SCHEMA = ToolSchema(
     name="read_skill",
-    description="Read the full body of a skill by its id.",
+    description="Read the full markdown body of a skill by its skill_id.",
     parameters={
         "type": "object",
         "properties": {

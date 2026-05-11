@@ -25,23 +25,23 @@ def test_write_skill_creates_file(tmp_path):
 
     reg.write_skill(
         skill_id="test_skill",
-        description="A test skill",
-        when_to_read="When testing",
-        body="## Strategy\nDo the thing.",
+        name="Test Skill",
+        description="A test skill. Use when testing.",
+        body="# Test Skill\n\nDo the thing.",
     )
 
     path = skills_dir / "test_skill.md"
     assert path.exists()
     content = path.read_text(encoding="utf-8")
-    assert "description: A test skill" in content
-    assert "when_to_read: When testing" in content
+    assert "name: Test Skill" in content
+    assert "description: A test skill. Use when testing." in content
     assert "Do the thing." in content
 
 
 def test_write_skill_creates_parent_dir(tmp_path):
     skills_dir = tmp_path / "nested" / "skills"
     reg = SkillRegistry(skills_dir)
-    reg.write_skill("x", "X", "always", "body")
+    reg.write_skill("x", "X", "X skill. Use always.", "body")
     assert (skills_dir / "x.md").exists()
 
 
@@ -49,12 +49,13 @@ def test_write_skill_overwrites_existing(tmp_path):
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     reg = SkillRegistry(skills_dir)
-    reg.write_skill("s", "Old desc", "old hint", "old body")
-    reg.write_skill("s", "New desc", "new hint", "new body")
+    reg.write_skill("s", "Old name", "Old desc. Use always.", "old body")
+    reg.write_skill("s", "New name", "New desc. Use always.", "new body")
 
     skill = reg.read_skill("s")
     assert skill is not None
-    assert skill.description == "New desc"
+    assert skill.name == "New name"
+    assert skill.description == "New desc. Use always."
     assert "new body" in skill.body
 
 
@@ -63,13 +64,10 @@ def test_write_skill_invalidates_cache(tmp_path):
     skills_dir.mkdir()
     reg = SkillRegistry(skills_dir)
 
-    # Warm the cache (empty list).
     assert reg.list_skills() == []
 
-    # Write a skill — should invalidate cache.
-    reg.write_skill("z", "Z", "whenever", "body z")
+    reg.write_skill("z", "Z", "Z skill. Use whenever.", "body z")
 
-    # list_skills should now include the new skill without explicit reload.
     metas = reg.list_skills()
     assert len(metas) == 1
     assert metas[0].skill_id == "z"
@@ -79,7 +77,7 @@ def test_delete_skill_removes_file(tmp_path):
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     reg = SkillRegistry(skills_dir)
-    reg.write_skill("del_me", "Desc", "hint", "body")
+    reg.write_skill("del_me", "Del", "Desc. Use always.", "body")
 
     result = reg.delete_skill("del_me")
     assert result is True
@@ -97,14 +95,12 @@ def test_delete_skill_invalidates_cache(tmp_path):
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     reg = SkillRegistry(skills_dir)
-    reg.write_skill("to_del", "D", "h", "body")
+    reg.write_skill("to_del", "D", "D skill. Use always.", "body")
 
-    # Warm cache.
     assert len(reg.list_skills()) == 1
 
     reg.delete_skill("to_del")
 
-    # Cache should be invalidated; list should now be empty.
     assert reg.list_skills() == []
 
 
@@ -194,9 +190,9 @@ def test_full_flow_list_read_write_text(tmp_path):
             "write_skill",
             {
                 "skill_id": "new_skill",
-                "description": "A new insight",
-                "when_to_read": "At the start of combat",
-                "body": "## Tip\nAlways do X.",
+                "name": "New Skill",
+                "description": "A new insight. Use at the start of combat.",
+                "body": "# New Skill\n\nAlways do X.",
             },
             "tc3",
         ),
@@ -247,7 +243,7 @@ def test_delete_skill_flow(tmp_path):
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     reg = SkillRegistry(skills_dir)
-    reg.write_skill("old_skill", "Old", "always", "outdated body")
+    reg.write_skill("old_skill", "Old", "Old skill. Use always.", "outdated body")
 
     responses = [
         _make_tool_response("list_skills", {}, "tc1"),
