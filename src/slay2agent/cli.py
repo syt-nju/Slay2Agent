@@ -10,6 +10,7 @@ Subcommands:
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import logging
 import sys
 from typing import Sequence
@@ -73,6 +74,8 @@ def _cmd_play(args: argparse.Namespace) -> int:
     from slay2agent.agent.loop import RunConfig, run_demo_loop
 
     cfg = Config.load()
+    if args.model:
+        cfg = dataclasses.replace(cfg, llm=dataclasses.replace(cfg.llm, model=args.model))
     run_cfg = RunConfig(
         character=args.character.upper(),
         ascension=args.ascension,
@@ -118,6 +121,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_play = sub.add_parser(
         "play", help="Run the Phase 1 demo loop (main menu → game_over)."
+    )
+    p_play.add_argument(
+        "--model", default=None,
+        help="Override OPENROUTER_MODEL for this run (default: env / config).",
     )
     p_play.add_argument(
         "--character", default="IRONCLAD", help="Character id (default: IRONCLAD)."

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-DEFAULT_LLM_MODEL = "openai/gpt-4o-mini"
+DEFAULT_LLM_MODEL = "xiaomi/mimo-v2-flash"
 
 
 @dataclass(frozen=True)

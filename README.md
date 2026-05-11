@@ -71,7 +71,7 @@ cp .env.example .env
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `OPENROUTER_API_KEY` | 无 | 必填，`sk-or-v1-...`。 |
-| `OPENROUTER_MODEL` | `openai/gpt-4o-mini` | 任意 OpenRouter slug。 |
+| `OPENROUTER_MODEL` | `xiaomi/mimo-v2-flash` | 任意 OpenRouter slug。`slay2agent play --model <slug>` 可一次性覆盖。 |
 | `OPENROUTER_TIMEOUT` | `120` | 单次 LLM 请求秒数。 |
 | `STS2MCP_BASE_URL` | `http://127.0.0.1:15526` | STS2MCP mod 监听的 base URL（端口对齐上游默认）。 |
 | `STS2MCP_TIMEOUT` | `30` | 单次 REST 请求秒数。 |
@@ -107,6 +107,7 @@ uv run slay2agent play              # 端到端跑一局：main menu → game_ov
 
 | 参数 | 默认 | 说明 |
 |---|---|---|
+| `--model` | `OPENROUTER_MODEL` env / 内置默认 | 本次 run 覆盖所有 agent 角色的模型 slug。 |
 | `--character` | `IRONCLAD` | 角色 id（大写）。 |
 | `--ascension` | `0` | Ascension 等级。 |
 | `--runs-dir` | `runs` | trace 输出目录。 |

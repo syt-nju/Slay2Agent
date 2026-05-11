@@ -2,7 +2,7 @@
 
 Usage:
     OPENROUTER_API_KEY=sk-or-... python -m slay2agent.llm.smoke
-    OPENROUTER_API_KEY=sk-or-... python -m slay2agent.llm.smoke --model=openai/gpt-4o-mini
+    OPENROUTER_API_KEY=sk-or-... python -m slay2agent.llm.smoke --model=xiaomi/mimo-v2-flash
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from slay2agent.llm import (
     call_with_retry,
 )
 
-DEFAULT_MODEL = "openai/gpt-4o-mini"
+DEFAULT_MODEL = "xiaomi/mimo-v2-flash"
 
 _ECHO_SCHEMA = ToolSchema(
     name="echo",
