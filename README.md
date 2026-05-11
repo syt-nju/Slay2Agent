@@ -4,15 +4,17 @@
 
 不训练任何模型、不读屏幕、不模拟键鼠。游戏状态与动作只走 [STS2MCP](https://github.com/Gennadiyev/STS2MCP) mod 暴露的本地 REST 接口，决策只走云端 LLM API（首版走 OpenRouter）。
 
+策略知识保存在 `agent_state/`（skill 库 + oracle）并跨 run 累积；每局结束、战斗场景切换时由 sub-agent **自动改写**——**越跑越懂这把游戏，不需要人工写经验**。
+
 ## 功能概览
 
+- **Agent state 自动迭代**（核心特色）：`skill_creator`（state_type 切换边界）和 `oracle_updater`（run 结束）两个 sub-agent 自动 read / write / merge `agent_state/skills/*.md` 与 `agent_state/oracle.md`，跨 run 持续累积策略；每局产物 snapshot 到 `runs/<run_id>/agent_state_snapshot/`，方便按时间 diff 看迭代轨迹
+- **三层 memory**：L0（in-context history，state_type 切换清空）+ L1（skill 库，metadata 全注入 + lazy read 全文）+ L2（oracle 全文注入）
 - **端到端 demo loop**：`slay2agent play` 从 main menu 自动驱动到 `game_over`，无需人工干预
 - **OpenRouter LLM 适配**：retry + per-`(role, model)` token 统计
 - **STS2MCP REST 通路**：`GameClient` + 28 个声明式 action schema + state-type gate
 - **紧凑 state 视图**：按 `state_type` 分发渲染，压到 < 700 字符喂 LLM
-- **三层 memory**：L0（in-context history）+ L1（`agent_state/skills/*.md`）+ L2（`agent_state/oracle.md`）
-- **两个 sub-agent**：`skill_creator`（state_type 切换边界）+ `oracle_updater`（run 结束）自动维护长期记忆
-- **完整 trace**：`runs/<run_id>/{steps.jsonl, subagent.jsonl, summary.json}` + memory 快照
+- **完整 trace**：`runs/<run_id>/{steps.jsonl, subagent.jsonl, summary.json}` 三件套 + memory 快照
 
 完整需求与架构见 [`docs/feature-requirements.md`](./docs/feature-requirements.md) 与 [`docs/framework-design.md`](./docs/framework-design.md)。LLM 适配层细节见 [`docs/llm-adapter.md`](./docs/llm-adapter.md)。Memory 设计的演化记录见 [`docs/memory-iteration-log.md`](./docs/memory-iteration-log.md)（建立中）。
 
