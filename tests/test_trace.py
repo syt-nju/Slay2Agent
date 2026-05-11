@@ -210,3 +210,49 @@ def test_summary_has_usage_detail() -> None:
         tw.write_summary(termination_reason="game_over", tracker=tracker)
         summary = json.loads((run_dir / "summary.json").read_text())
         assert "usage_detail" in summary
+
+
+# ── TraceWriter: write_agent_state_snapshot ────────────────────────────────
+
+
+def test_agent_state_snapshot_copies_oracle_and_skills() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        agent_state = Path(tmp) / "agent_state"
+        (agent_state / "skills").mkdir(parents=True)
+        (agent_state / "oracle.md").write_text("v1 strategy", encoding="utf-8")
+        (agent_state / "skills" / "combat_basics.md").write_text(
+            "---\ndescription: x\nwhen_to_read: y\n---\n\nbody\n", encoding="utf-8"
+        )
+
+        run_dir = Path(tmp) / "run"
+        tw = TraceWriter(run_dir)
+        tw.write_agent_state_snapshot(agent_state)
+
+        snap = run_dir / "agent_state_snapshot"
+        assert (snap / "oracle.md").read_text() == "v1 strategy"
+        assert (snap / "skills" / "combat_basics.md").exists()
+
+
+def test_agent_state_snapshot_missing_source_is_noop() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = Path(tmp) / "run"
+        tw = TraceWriter(run_dir)
+        tw.write_agent_state_snapshot(Path(tmp) / "does_not_exist")
+        # No exception; no snapshot dir created.
+        assert not (run_dir / "agent_state_snapshot").exists()
+
+
+def test_agent_state_snapshot_overwrites_on_second_call() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        agent_state = Path(tmp) / "agent_state"
+        agent_state.mkdir()
+        (agent_state / "oracle.md").write_text("v1", encoding="utf-8")
+
+        run_dir = Path(tmp) / "run"
+        tw = TraceWriter(run_dir)
+        tw.write_agent_state_snapshot(agent_state)
+
+        (agent_state / "oracle.md").write_text("v2", encoding="utf-8")
+        tw.write_agent_state_snapshot(agent_state)
+
+        assert (run_dir / "agent_state_snapshot" / "oracle.md").read_text() == "v2"

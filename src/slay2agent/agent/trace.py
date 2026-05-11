@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import time
 import uuid
 from dataclasses import asdict, dataclass
@@ -141,6 +142,32 @@ class TraceWriter:
             {r: token_summary[r]["input_tokens"] + token_summary[r]["output_tokens"]
              for r in all_roles},
         )
+
+    # ── agent_state snapshot ───────────────────────────────────────────────
+
+    def write_agent_state_snapshot(self, agent_state_dir: Path) -> None:
+        """Copy ``agent_state_dir`` into ``runs/<run_id>/agent_state_snapshot/``.
+
+        Captures the post-run state of ``oracle.md`` + ``skills/`` so each run
+        trace ships with the exact memory snapshot that produced (and was
+        produced by) it.  Missing source is a silent no-op — early runs may
+        have no ``agent_state/`` yet.
+        """
+        if not agent_state_dir.exists():
+            logger.info(
+                "agent_state snapshot: source %s does not exist — skipping",
+                agent_state_dir,
+            )
+            return
+
+        dest = self.run_dir / "agent_state_snapshot"
+        try:
+            shutil.copytree(agent_state_dir, dest, dirs_exist_ok=True)
+        except OSError as exc:
+            logger.error("agent_state snapshot: copy failed: %s", exc)
+            return
+
+        logger.info("agent_state snapshot written to %s", dest)
 
     # ── internal ───────────────────────────────────────────────────────────
 

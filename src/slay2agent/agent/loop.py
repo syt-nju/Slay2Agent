@@ -476,6 +476,11 @@ def run_demo_loop(cfg: Config, run_cfg: RunConfig) -> Path:
                 termination_reason=termination_reason,
                 oracle_max_tokens=cfg.memory.oracle_max_tokens,
             )
+            # Snapshot post-run memory (oracle + skills) into the run dir so
+            # each trace carries an immutable record of what the next run will
+            # start from.  Done after oracle_updater so the snapshot reflects
+            # the version-of-record.
+            trace.write_agent_state_snapshot(cfg.memory.agent_state_dir)
             trace.write_summary(
                 termination_reason=termination_reason,
                 tracker=tracker,
