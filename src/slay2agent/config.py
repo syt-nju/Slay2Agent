@@ -83,6 +83,10 @@ class MemoryConfig:
         return self.agent_state_dir / "skills"
 
     @property
+    def skill_cache_path(self) -> Path:
+        return self.agent_state_dir / "skill_cache.json"
+
+    @property
     def oracle_path(self) -> Path:
         return self.agent_state_dir / "oracle.md"
 

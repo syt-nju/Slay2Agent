@@ -47,6 +47,7 @@ from slay2agent.llm.protocol import AgentRole, Message, ToolCall
 from slay2agent.llm.retry import call_with_retry
 from slay2agent.llm.usage import UsageTracker
 from slay2agent.memory.oracle import oracle_version, read_oracle
+from slay2agent.memory.skill_cache import SkillCache
 from slay2agent.memory.skill_registry import SkillRegistry
 from slay2agent.viewer.observer import NoOpObserver, RunObserver
 
@@ -202,8 +203,9 @@ def run_demo_loop(
         repeat_threshold=run_cfg.repeat_threshold,
     )
 
-    # F-008a: initialise memory layer.
-    skill_registry = SkillRegistry(cfg.memory.skills_dir)
+    # F-008a: initialise memory layer with two-level LRU cache.
+    skill_cache = SkillCache.load(cfg.memory.skill_cache_path)
+    skill_registry = SkillRegistry(cfg.memory.skills_dir, skill_cache=skill_cache)
     oracle_path = cfg.memory.oracle_path
 
     logger.info("starting run %s  character=%s asc=%d", run_id, run_cfg.character, run_cfg.ascension)
@@ -272,12 +274,10 @@ def run_demo_loop(
 
                 prev_state_type = state_type
 
-                # ── F-008a: reload + read memory layer ──────────────────────
-                # Reload after L0 clear (state_type transition) so that skills
-                # written by a future skill_creator sub-agent (F-008b) are
-                # picked up immediately on the next screen.
-                if l0_cleared:
-                    skill_registry.reload()
+                # NOTE: skill_registry.reload() is intentionally NOT called on
+                # state_type transitions to preserve KV cache hit rate (the
+                # system prompt skill list stays stable within a run). Reload
+                # happens once at run end (see finally block).
 
                 skill_meta_lines = skill_registry.metadata_lines()
                 oracle_content = read_oracle(oracle_path)
@@ -500,6 +500,10 @@ def run_demo_loop(
             observer.on_run_end("error", step)
 
         finally:
+            # Reload skill registry at run end so next run picks up all changes
+            # made by skill_creator during this run (kept stable mid-run for KV cache).
+            skill_registry.reload()
+
             # F-008c: oracle_updater fires at run end (before writing summary)
             run_oracle_updater(
                 run_trace_summary=_build_run_trace_summary(step, termination_reason, tracker),

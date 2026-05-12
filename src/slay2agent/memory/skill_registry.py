@@ -1,4 +1,4 @@
-"""Skill registry — L1 memory layer (F-008a).
+"""Skill registry — L1 memory layer (F-008a) with two-level LRU cache.
 
 Skills live in ``agent_state/skills/<skill_id>.md`` as flat single-file
 markdown documents. The format is aligned with the mainstream agent skill
@@ -24,6 +24,12 @@ Frontmatter fields:
 ``skill_id`` is derived from the filename stem (e.g. ``ironclad_early_combat``
 for ``ironclad_early_combat.md``). Filenames are snake_case identifiers.
 
+Cache layer:
+    - L1 (20 skills): injected into system prompt directly.
+    - L2 (200 skills): discoverable via list_skills tool.
+    - read_skill promotes to L1; write_skill inserts as L1; delete removes.
+    - L2 overflow → permanent deletion of least-recently-used skill files.
+
 All public methods return plain Python objects so they are easy to test and
 to serialise into tool responses.
 """
@@ -34,6 +40,10 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from slay2agent.memory.skill_cache import SkillCache
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +131,11 @@ def _load_skill_file(path: Path) -> Skill | None:
 
 
 class SkillRegistry:
-    """Read-only view of the skill library on disk.
+    """Skill library with two-level LRU cache.
+
+    L1 skills (up to 20) are injected into the system prompt.
+    L2 skills (up to 200) are discoverable via the list_skills tool.
+    read_skill promotes to L1; write_skill inserts into L1; delete removes.
 
     The registry is *lazy*: it scans the directory on first use and caches
     results.  Call ``reload()`` to re-scan after on-disk changes (e.g. after
@@ -130,18 +144,27 @@ class SkillRegistry:
     Usage::
 
         registry = SkillRegistry(Path("agent_state/skills"))
-        metas = registry.list_skills()          # cheap — metadata only
-        skill = registry.read_skill("combat_basics")  # loads full body
+        metas = registry.list_skills()          # returns L2 (for tool response)
+        skill = registry.read_skill("combat_basics")  # promotes to L1
     """
 
-    def __init__(self, skills_dir: Path) -> None:
+    def __init__(self, skills_dir: Path, *, skill_cache: "SkillCache | None" = None) -> None:
         self._skills_dir = skills_dir
-        self._cache: dict[str, Skill] | None = None
+        self._disk_cache: dict[str, Skill] | None = None
+        self._skill_cache = skill_cache
+
+    @property
+    def skill_cache(self) -> "SkillCache | None":
+        return self._skill_cache
+
+    @skill_cache.setter
+    def skill_cache(self, cache: "SkillCache") -> None:
+        self._skill_cache = cache
 
     # ── public API ─────────────────────────────────────────────────────────
 
     def list_skills(self) -> list[SkillMeta]:
-        """Return metadata for all skills, sorted by skill_id."""
+        """Return metadata for ALL skills (L1+L2), sorted by skill_id."""
         return [
             SkillMeta(
                 skill_id=s.skill_id,
@@ -151,28 +174,58 @@ class SkillRegistry:
             for s in sorted(self._load().values(), key=lambda s: s.skill_id)
         ]
 
+    def list_l1_skills(self) -> list[SkillMeta]:
+        """Return metadata for L1 skills only (for system prompt injection)."""
+        if self._skill_cache is None:
+            return self.list_skills()
+        all_skills = self._load()
+        result = []
+        for sid in self._skill_cache.l1_ids():
+            s = all_skills.get(sid)
+            if s:
+                result.append(SkillMeta(skill_id=s.skill_id, name=s.name, description=s.description))
+        return result
+
+    def list_l2_skills(self) -> list[SkillMeta]:
+        """Return metadata for L2 skills only (for list_skills tool response)."""
+        if self._skill_cache is None:
+            return self.list_skills()
+        all_skills = self._load()
+        result = []
+        for sid in self._skill_cache.l2_ids():
+            s = all_skills.get(sid)
+            if s:
+                result.append(SkillMeta(skill_id=s.skill_id, name=s.name, description=s.description))
+        return result
+
     def read_skill(self, skill_id: str) -> Skill | None:
-        """Return the full skill (including body) or None if not found."""
-        return self._load().get(skill_id)
+        """Return the full skill (including body) or None if not found.
+
+        Side-effect: promotes the skill to L1 in the cache.
+        """
+        skill = self._load().get(skill_id)
+        if skill is not None and self._skill_cache is not None:
+            source = self._skill_cache.promote(skill_id)
+            logger.debug("skill_registry: read_skill %r promoted from %s", skill_id, source)
+            self._handle_evictions()
+        return skill
 
     def reload(self) -> None:
         """Invalidate the in-memory cache and re-scan the skills directory."""
-        self._cache = None
+        self._disk_cache = None
+        if self._skill_cache is not None:
+            on_disk = {p.stem for p in self._skills_dir.glob("*.md")} if self._skills_dir.exists() else set()
+            self._skill_cache.sync_with_disk(on_disk)
         logger.debug("skill_registry: cache invalidated")
 
     # ── system-prompt helpers ───────────────────────────────────────────────
 
     def metadata_lines(self) -> list[str]:
-        """Render skill metadata as compact lines for system-prompt injection.
+        """Render L1 skill metadata for system-prompt injection.
 
-        Each line is ``- [<id>] <name> — <description>``.  The description is
-        the SOLE signal the main agent uses to decide whether to call
-        ``read_skill``, so it must already encode both "what" and "when to
-        use" (mainstream pattern).
-
-        Returns an empty list when the skill library is empty.
+        Only L1 skills are shown here. The model discovers L2 via list_skills.
         """
-        metas = self.list_skills()
+        metas = self.list_l1_skills()
         if not metas:
             return []
         return [
@@ -183,7 +236,11 @@ class SkillRegistry:
     # ── tool-response helpers ───────────────────────────────────────────────
 
     def list_skills_response(self) -> dict:
-        """JSON-serialisable response for the list_skills tool call."""
+        """JSON-serialisable response for the list_skills tool call.
+
+        Returns L2 skills — the model already sees L1 in its system prompt.
+        """
+        metas = self.list_l2_skills()
         return {
             "skills": [
                 {
@@ -191,8 +248,9 @@ class SkillRegistry:
                     "name": m.name,
                     "description": m.description,
                 }
-                for m in self.list_skills()
-            ]
+                for m in metas
+            ],
+            "note": "These are additional skills not shown in your system prompt. Use read_skill to load any that match the current situation.",
         }
 
     def read_skill_response(self, skill_id: str) -> dict:
@@ -219,12 +277,10 @@ class SkillRegistry:
         description: str,
         body: str,
     ) -> None:
-        """Create or overwrite a skill file and invalidate cache.
+        """Create or overwrite a skill file and promote to L1.
 
         The file is written in the standard frontmatter format so it can be
-        read back by ``_load_skill_file``.  The body is written verbatim and
-        should be a self-contained markdown document (start with an ``H1``
-        title so it looks like a proper SKILL.md).
+        read back by ``_load_skill_file``.
         """
         self._skills_dir.mkdir(parents=True, exist_ok=True)
         path = self._skills_dir / f"{skill_id}.md"
@@ -236,29 +292,38 @@ class SkillRegistry:
             f"{body.strip()}\n"
         )
         path.write_text(content, encoding="utf-8")
-        self._cache = None
+        self._disk_cache = None
+
+        if self._skill_cache is not None:
+            self._skill_cache.add_new(skill_id)
+            self._handle_evictions()
+
         logger.info("skill_registry: wrote skill %r to %s", skill_id, path)
 
     def delete_skill(self, skill_id: str) -> bool:
-        """Delete a skill file.
+        """Delete a skill file and remove from cache.
 
         Returns ``True`` if the file existed and was removed, ``False`` if the
-        skill was not found.  Invalidates the cache on success.
+        skill was not found.
         """
         path = self._skills_dir / f"{skill_id}.md"
         if not path.exists():
             logger.debug("skill_registry: delete_skill %r — not found", skill_id)
             return False
         path.unlink()
-        self._cache = None
+        self._disk_cache = None
+
+        if self._skill_cache is not None:
+            self._skill_cache.remove(skill_id)
+
         logger.info("skill_registry: deleted skill %r", skill_id)
         return True
 
     # ── internal ───────────────────────────────────────────────────────────
 
     def _load(self) -> dict[str, Skill]:
-        if self._cache is not None:
-            return self._cache
+        if self._disk_cache is not None:
+            return self._disk_cache
 
         skills: dict[str, Skill] = {}
 
@@ -267,8 +332,8 @@ class SkillRegistry:
                 "skill_registry: skills_dir %s does not exist — empty library",
                 self._skills_dir,
             )
-            self._cache = skills
-            return self._cache
+            self._disk_cache = skills
+            return self._disk_cache
 
         for path in sorted(self._skills_dir.glob("*.md")):
             skill = _load_skill_file(path)
@@ -281,5 +346,20 @@ class SkillRegistry:
             len(skills),
             self._skills_dir,
         )
-        self._cache = skills
-        return self._cache
+        self._disk_cache = skills
+        return self._disk_cache
+
+    def _handle_evictions(self) -> None:
+        """Delete skill files that were evicted from L2 due to overflow."""
+        if self._skill_cache is None:
+            return
+        evicted = self._skill_cache.last_evicted
+        if not evicted:
+            return
+        for sid in evicted:
+            path = self._skills_dir / f"{sid}.md"
+            if path.exists():
+                path.unlink()
+                logger.info("skill_registry: evicted skill file %s (L2 overflow)", sid)
+        self._skill_cache.last_evicted = []
+        self._disk_cache = None
