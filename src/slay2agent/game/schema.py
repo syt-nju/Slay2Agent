@@ -604,8 +604,8 @@ def _fmt_relics(relics: tuple[Relic, ...]) -> str:
 def _fmt_potions(potions: tuple[Potion, ...], slots: int) -> str:
     if not potions:
         return f"(empty, {slots} slot{'s' if slots != 1 else ''})"
-    names = [p.name for p in potions]
-    return f"{', '.join(names)} ({len(potions)}/{slots})"
+    entries = [f"{p.name} — {p.description}" if p.description else p.name for p in potions]
+    return f"{'; '.join(entries)} ({len(potions)}/{slots})"
 
 
 def _fmt_card_line(c: Card) -> str:
