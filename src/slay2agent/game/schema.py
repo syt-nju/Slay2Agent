@@ -233,6 +233,45 @@ class GameOverView:
 
 
 @dataclass(frozen=True)
+class RestSiteOption:
+    index: int
+    name: str
+    is_enabled: bool
+
+
+@dataclass(frozen=True)
+class RestSiteView:
+    options: tuple[RestSiteOption, ...]
+
+
+@dataclass(frozen=True)
+class ShopItem:
+    index: int
+    name: str
+    price: int
+    type: str
+    sold_out: bool
+
+
+@dataclass(frozen=True)
+class ShopView:
+    items: tuple[ShopItem, ...]
+    remove_cost: int | None
+
+
+@dataclass(frozen=True)
+class TreasureRelic:
+    index: int
+    name: str
+    description: str
+
+
+@dataclass(frozen=True)
+class TreasureView:
+    relics: tuple[TreasureRelic, ...]
+
+
+@dataclass(frozen=True)
 class UnknownView:
     """Catch-all for state_types without a dedicated parser.
 
@@ -253,6 +292,9 @@ View = Union[
     RewardsView,
     CardRewardView,
     CardSelectView,
+    RestSiteView,
+    ShopView,
+    TreasureView,
     GameOverView,
     UnknownView,
 ]
@@ -518,6 +560,52 @@ def _parse_card_select(raw: dict[str, Any]) -> CardSelectView:
     )
 
 
+def _parse_rest_site(raw: dict[str, Any]) -> RestSiteView:
+    rs = raw.get("rest_site", {}) or {}
+    options = tuple(
+        RestSiteOption(
+            index=int(o.get("index", i)),
+            name=str(o.get("name", o.get("label", "?"))),
+            is_enabled=bool(o.get("is_enabled", True)),
+        )
+        for i, o in enumerate(rs.get("options", []) or [])
+    )
+    return RestSiteView(options=options)
+
+
+def _parse_shop(raw: dict[str, Any]) -> ShopView:
+    s = raw.get("shop", {}) or {}
+    items_raw = s.get("items", s.get("inventory", []) or []) or []
+    items = tuple(
+        ShopItem(
+            index=int(it.get("index", i)),
+            name=str(it.get("name", "?")),
+            price=int(it.get("price", it.get("cost", 0))),
+            type=str(it.get("type", "")),
+            sold_out=bool(it.get("sold_out", it.get("is_sold_out", False))),
+        )
+        for i, it in enumerate(items_raw)
+    )
+    remove_cost = s.get("remove_cost") or s.get("purge_cost")
+    return ShopView(
+        items=items,
+        remove_cost=int(remove_cost) if remove_cost is not None else None,
+    )
+
+
+def _parse_treasure(raw: dict[str, Any]) -> TreasureView:
+    t = raw.get("treasure", {}) or {}
+    relics = tuple(
+        TreasureRelic(
+            index=int(r.get("index", i)),
+            name=str(r.get("name", "?")),
+            description=str(r.get("description", "")),
+        )
+        for i, r in enumerate(t.get("relics", []) or [])
+    )
+    return TreasureView(relics=relics)
+
+
 def _parse_game_over(raw: dict[str, Any]) -> GameOverView:
     g = raw.get("game_over", {}) or {}
     return GameOverView(
@@ -537,6 +625,10 @@ _VIEW_PARSERS: dict[str, Any] = {
     "rewards": _parse_rewards,
     "card_reward": _parse_card_reward,
     "card_select": _parse_card_select,
+    "rest_site": _parse_rest_site,
+    "shop": _parse_shop,
+    "fake_merchant": _parse_shop,
+    "treasure": _parse_treasure,
     "game_over": _parse_game_over,
 }
 
@@ -777,6 +869,63 @@ def _render_card_select(state: ParsedState, view: CardSelectView) -> str:
     return "\n".join(lines)
 
 
+def _render_rest_site(state: ParsedState, view: RestSiteView) -> str:
+    lines = [f"## Rest Site — {_fmt_run(state.run)}"]
+    p = state.player
+    if p:
+        lines.append(_fmt_player_header(p, in_combat=False))
+        lines.append(f"Relics: {_fmt_relics(p.relics)}")
+        lines.append(f"Potions: {_fmt_potions(p.potions, p.max_potion_slots)}")
+    enabled = [o for o in view.options if o.is_enabled]
+    if enabled:
+        lines.append("Options (use choose_rest_option):")
+        for o in enabled:
+            lines.append(f"  - [{o.index}] {o.name}")
+    else:
+        lines.append("No options remaining — use proceed to leave.")
+    return "\n".join(lines)
+
+
+def _render_shop(state: ParsedState, view: ShopView) -> str:
+    label = "Fake Merchant" if state.state_type == "fake_merchant" else "Shop"
+    lines = [f"## {label} — {_fmt_run(state.run)}"]
+    p = state.player
+    if p:
+        lines.append(_fmt_player_header(p, in_combat=False))
+        lines.append(f"Relics: {_fmt_relics(p.relics)}")
+        lines.append(f"Potions: {_fmt_potions(p.potions, p.max_potion_slots)}")
+    available = [it for it in view.items if not it.sold_out]
+    sold_out = [it for it in view.items if it.sold_out]
+    if available:
+        lines.append("Items for sale (use shop_purchase):")
+        for it in available:
+            type_tag = f" [{it.type}]" if it.type else ""
+            lines.append(f"  - [{it.index}] {it.name}{type_tag} — {it.price}g")
+    else:
+        lines.append("No items available.")
+    if sold_out:
+        lines.append(f"Sold out: {', '.join(it.name for it in sold_out)}")
+    if view.remove_cost is not None:
+        lines.append(f"Card removal: {view.remove_cost}g")
+    lines.append("Use proceed to leave the shop.")
+    return "\n".join(lines)
+
+
+def _render_treasure(state: ParsedState, view: TreasureView) -> str:
+    lines = [f"## Treasure — {_fmt_run(state.run)}"]
+    p = state.player
+    if p:
+        lines.append(_fmt_player_header(p, in_combat=False))
+    if view.relics:
+        lines.append("Relics (use claim_treasure_relic):")
+        for r in view.relics:
+            desc = f" — {r.description}" if r.description else ""
+            lines.append(f"  - [{r.index}] {r.name}{desc}")
+    else:
+        lines.append("Chest is empty — use proceed to leave.")
+    return "\n".join(lines)
+
+
 def _render_game_over(state: ParsedState, view: GameOverView) -> str:
     p = state.player
     lines = [f"## GameOver — {_fmt_run(state.run)}"]
@@ -810,6 +959,9 @@ _RENDERERS: dict[type, Any] = {
     RewardsView: _render_rewards,
     CardRewardView: _render_card_reward,
     CardSelectView: _render_card_select,
+    RestSiteView: _render_rest_site,
+    ShopView: _render_shop,
+    TreasureView: _render_treasure,
     GameOverView: _render_game_over,
     UnknownView: _render_unknown,
 }
@@ -848,9 +1000,15 @@ __all__ = [
     "Potion",
     "Relic",
     "RewardItem",
+    "RestSiteOption",
+    "RestSiteView",
     "RewardsView",
     "RunInfo",
+    "ShopItem",
+    "ShopView",
     "Status",
+    "TreasureRelic",
+    "TreasureView",
     "UnknownView",
     "View",
     "parse",
