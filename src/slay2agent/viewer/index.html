@@ -283,6 +283,28 @@ function fmt(n) {
   return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
 }
 
+let autoScroll = true;
+
+panel.addEventListener('wheel', (e) => {
+  if (e.deltaY < 0) {
+    autoScroll = false;
+  } else {
+    const distFromBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight;
+    if (distFromBottom < 30) autoScroll = true;
+  }
+});
+
+panel.addEventListener('touchstart', () => { autoScroll = false; }, { passive: true });
+panel.addEventListener('touchend', () => {
+  const distFromBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight;
+  if (distFromBottom < 30) autoScroll = true;
+}, { passive: true });
+
+function scrollToBottom() {
+  if (!autoScroll) return;
+  panel.scrollTop = panel.scrollHeight;
+}
+
 function addStepCard(step, stateType, userMessage) {
   const card = document.createElement('div');
   card.className = 'step-card';
@@ -298,7 +320,7 @@ function addStepCard(step, stateType, userMessage) {
   `;
   panel.appendChild(card);
   currentCard = card;
-  panel.scrollTop = panel.scrollHeight;
+  scrollToBottom();
   stepCounter.textContent = `step: ${step}`;
 }
 
@@ -311,7 +333,7 @@ function appendToCard(label, content, cls) {
     <div class="step-content ${cls || ''}">${esc(content)}</div>
   `;
   currentCard.appendChild(sec);
-  panel.scrollTop = panel.scrollHeight;
+  scrollToBottom();
 }
 
 function updateUsage(snapshot) {
@@ -398,7 +420,7 @@ function connect() {
     banner.className = 'run-end-banner';
     banner.textContent = `Run ended: ${d.termination_reason} (${d.total_steps} steps)`;
     panel.appendChild(banner);
-    panel.scrollTop = panel.scrollHeight;
+    scrollToBottom();
   });
 }
 

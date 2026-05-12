@@ -97,6 +97,8 @@ class LoopDetector:
             raise LoopDetected(action, args or {}, count, self.window_size)
 
 
+MEMORY_TOOL_NAMES = {"list_skills", "read_skill"}
+
 # Actions that require it to be the player's turn in combat.
 # When is_play_phase=False these are excluded from visible_tools and
 # rejected by the gate so the LLM physically cannot call them.

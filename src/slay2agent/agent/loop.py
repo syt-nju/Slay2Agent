@@ -32,7 +32,7 @@ from typing import Any
 
 from slay2agent.agent.oracle_updater import run_oracle_updater
 from slay2agent.agent.skill_creator import run_skill_creator
-from slay2agent.agent.tool_bridge import LoopDetected, LoopDetector, ToolBridge
+from slay2agent.agent.tool_bridge import LoopDetected, LoopDetector, ToolBridge, MEMORY_TOOL_NAMES
 from slay2agent.agent.trace import (
     StepRecord,
     TerminationReason,
@@ -373,9 +373,14 @@ def run_demo_loop(
 
                     try:
                         result_raw = bridge.execute(state_type, action_name, action_args, is_play_phase=is_play_phase)
-                        result_parsed = parse(result_raw)
-                        tool_result_state_type = result_parsed.state_type
-                        settled_summary = to_compact_prompt(result_parsed)
+
+                        if action_name in MEMORY_TOOL_NAMES:
+                            import json as _json
+                            settled_summary = _json.dumps(result_raw, ensure_ascii=False, indent=2)
+                        else:
+                            result_parsed = parse(result_raw)
+                            tool_result_state_type = result_parsed.state_type
+                            settled_summary = to_compact_prompt(result_parsed)
                         observer.on_tool_result(action_name, settled_summary[:200])
 
                         # Append to L0: assistant message + tool results for
