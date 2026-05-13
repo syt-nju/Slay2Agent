@@ -14,13 +14,13 @@ from slay2agent.agent.tool_bridge import (
 # ── _args_key ──────────────────────────────────────────────────────────────
 
 def test_args_key_stable_ordering() -> None:
-    k1 = _args_key({"b": 2, "a": 1})
-    k2 = _args_key({"a": 1, "b": 2})
+    k1 = _args_key("action", {"b": 2, "a": 1})
+    k2 = _args_key("action", {"a": 1, "b": 2})
     assert k1 == k2
 
 
 def test_args_key_none_equals_empty() -> None:
-    assert _args_key(None) == _args_key({})
+    assert _args_key("action", None) == _args_key("action", {})
 
 
 # ── LoopDetector ──────────────────────────────────────────────────────────
@@ -192,16 +192,18 @@ def test_gate_rejects_unknown_action() -> None:
 
 def test_execute_memory_tool_list_skills() -> None:
     bridge = _make_bridge()
-    result = bridge.execute("menu", "list_skills", {})
+    result, warning = bridge.execute("menu", "list_skills", {})
     assert "skills" in result
     assert isinstance(result["skills"], list)
+    assert warning is None
 
 
 def test_execute_memory_tool_read_skill() -> None:
     bridge = _make_bridge()
-    result = bridge.execute("menu", "read_skill", {"skill_id": "test_skill"})
+    result, warning = bridge.execute("menu", "read_skill", {"skill_id": "test_skill"})
     assert result["skill_id"] == "test_skill"
     assert "body" in result
+    assert warning is None
 
 
 def test_loop_detected_via_bridge() -> None:

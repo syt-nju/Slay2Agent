@@ -372,7 +372,12 @@ def run_demo_loop(
                         )
 
                     try:
-                        result_raw = bridge.execute(state_type, action_name, action_args, is_play_phase=is_play_phase)
+                        current_hand = parsed.player.hand if parsed.player else None
+                        result_raw, loop_warning = bridge.execute(
+                            state_type, action_name, action_args,
+                            is_play_phase=is_play_phase,
+                            hand=current_hand,
+                        )
 
                         if action_name in MEMORY_TOOL_NAMES:
                             import json as _json
@@ -381,6 +386,10 @@ def run_demo_loop(
                             result_parsed = parse(result_raw)
                             tool_result_state_type = result_parsed.state_type
                             settled_summary = to_compact_prompt(result_parsed)
+
+                        if loop_warning:
+                            settled_summary = loop_warning + "\n\n" + settled_summary
+
                         observer.on_tool_result(action_name, settled_summary[:200])
 
                         # Append to L0: assistant message + tool results for

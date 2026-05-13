@@ -47,9 +47,21 @@ class LoopDetected(Exception):
         )
 
 
-def _args_key(args: dict[str, Any] | None) -> str:
-    """Stable, hashable representation of action args for loop detection."""
-    return json.dumps(args or {}, sort_keys=True)
+def _args_key(action: str, args: dict[str, Any] | None, hand: tuple | None = None) -> str:
+    """Stable, hashable representation of action args for loop detection.
+
+    For positional card actions (play_card, select_card), resolve card_index
+    to the actual card name so that playing different cards at the same index
+    is not falsely flagged as a loop.
+    """
+    args = args or {}
+    if hand and action in ("play_card", "select_card") and "card_index" in args:
+        idx = args["card_index"]
+        if isinstance(idx, int) and 0 <= idx < len(hand):
+            resolved = dict(args)
+            resolved["_card_name"] = hand[idx].name
+            return json.dumps(resolved, sort_keys=True)
+    return json.dumps(args, sort_keys=True)
 
 
 @dataclass
@@ -77,9 +89,13 @@ class LoopDetector:
         """Clear history (call on state-type transitions)."""
         self._history.clear()
 
-    def check_and_record(self, action: str, args: dict[str, Any] | None = None) -> None:
-        """Record this step and raise ``LoopDetected`` if threshold is met."""
-        key = _args_key(args)
+    @property
+    def warning_threshold(self) -> int:
+        return max(2, self.repeat_threshold // 2)
+
+    def check_and_record(self, action: str, args: dict[str, Any] | None = None, *, hand: tuple | None = None) -> str | None:
+        """Record this step; raise ``LoopDetected`` at hard threshold, return warning at soft threshold."""
+        key = _args_key(action, args, hand)
         pair = (action, key)
 
         self._history.append(pair)
@@ -95,6 +111,22 @@ class LoopDetector:
                 self.window_size,
             )
             raise LoopDetected(action, args or {}, count, self.window_size)
+
+        if count >= self.warning_threshold:
+            logger.warning(
+                "loop_detector: %r %s repeated %d times — soft warning issued",
+                action,
+                args,
+                count,
+            )
+            return (
+                f"⚠️ WARNING: You have repeated the EXACT same action ({action} {args}) "
+                f"{count} times in the last {self.window_size} steps. "
+                f"If you repeat it {self.repeat_threshold - count} more time(s), "
+                f"the run will be TERMINATED. You MUST choose a DIFFERENT action now. "
+                f"Consider: end_turn, play a different card, use a potion, or read a skill for strategy advice."
+            )
+        return None
 
 
 MEMORY_TOOL_NAMES = {"list_skills", "read_skill"}
@@ -148,8 +180,12 @@ class ToolBridge:
         args: dict[str, Any] | None = None,
         *,
         is_play_phase: bool = True,
-    ) -> dict[str, Any]:
-        """Validate gate membership, check loop, dispatch, return settled state.
+        hand: tuple | None = None,
+    ) -> tuple[dict[str, Any], str | None]:
+        """Validate gate membership, check loop, dispatch, return (settled_state, warning).
+
+        Returns:
+            A tuple of (result_dict, optional_warning_str).
 
         Raises:
             ValueError: if ``action`` is not in the allowed set for ``state_type``
@@ -184,11 +220,11 @@ class ToolBridge:
 
         # Memory tools are handled in-process via skill registry.
         if action in allowed_memory:
-            return self._handle_memory_tool(action, args or {})
+            return self._handle_memory_tool(action, args or {}), None
 
         # Game action: loop-check then dispatch.
-        self.loop_detector.check_and_record(action, args)
-        return dispatch(self.client, action, args)
+        warning = self.loop_detector.check_and_record(action, args, hand=hand)
+        return dispatch(self.client, action, args), warning
 
     # ── Memory tool handlers ────────────────────────────────────────────────
 
