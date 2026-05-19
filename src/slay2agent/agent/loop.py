@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from slay2agent.agent.issue_logger import log_loop_issue
 from slay2agent.agent.oracle_updater import run_oracle_updater
 from slay2agent.agent.skill_creator import run_skill_creator
 from slay2agent.agent.tool_bridge import LoopDetected, LoopDetector, ToolBridge, MEMORY_TOOL_NAMES
@@ -269,6 +270,7 @@ def run_demo_loop(
                             prev_state_type=prev_state_type,
                             new_state_type=state_type,
                             observer=observer,
+                            extra_body=cfg.llm.subagent_extra_body,
                         )
                     # Reset loop detector so actions from one screen don't
                     # pollute the window for the next.
@@ -335,8 +337,10 @@ def run_demo_loop(
                 )
 
                 # ── LLM call ─────────────────────────────────────────────────
+                _main_extra_body = cfg.llm.extra_body
                 resp = call_with_retry(
-                    lambda: adapter.chat(full_messages, tools, tool_choice="required")
+                    lambda: adapter.chat(full_messages, tools, tool_choice="required",
+                                         extra_body=_main_extra_body)
                 )
                 tracker.record(_AGENT_ROLE, resp.model, resp.usage)
 
@@ -354,6 +358,7 @@ def run_demo_loop(
                 tool_call: ToolCall | None = None
                 tool_result_state_type: str | None = None
                 settled_summary = compact  # fallback if no tool call
+                loop_warning_raw_injected = False
 
                 if assistant_msg.tool_calls:
                     tool_call = assistant_msg.tool_calls[0]
@@ -390,7 +395,28 @@ def run_demo_loop(
                             settled_summary = to_compact_prompt(result_parsed)
 
                         if loop_warning:
-                            settled_summary = loop_warning + "\n\n" + settled_summary
+                            import json as _json
+                            # Inject raw MCP state for self-diagnosis
+                            raw_state_str = _json.dumps(result_raw, ensure_ascii=False, indent=2)
+                            settled_summary = (
+                                loop_warning
+                                + "\n\n## Raw MCP State (for debugging)\n```json\n"
+                                + raw_state_str
+                                + "\n```\n\n"
+                                + settled_summary
+                            )
+                            loop_warning_raw_injected = True
+                            # Log issue for post-run analysis
+                            log_loop_issue(
+                                issues_path=cfg.memory.issues_path,
+                                run_dir=run_dir,
+                                step=step,
+                                state_type=state_type,
+                                repeated_action=action_name,
+                                repeated_args=action_args,
+                                repeat_count=loop_detector.last_warning_count,
+                                compact_prompt_snippet=to_compact_prompt(result_parsed) if action_name not in MEMORY_TOOL_NAMES else "",
+                            )
 
                         observer.on_tool_result(action_name, settled_summary[:200])
 
@@ -497,6 +523,7 @@ def run_demo_loop(
                     tool_args=tool_call.arguments if tool_call else None,
                     tool_result_state_type=tool_result_state_type,
                     settled_state_summary=settled_summary,
+                    loop_warning_raw_injected=loop_warning_raw_injected,
                 ))
 
                 step += 1
@@ -527,6 +554,7 @@ def run_demo_loop(
                 termination_reason=termination_reason,
                 oracle_max_tokens=cfg.memory.oracle_max_tokens,
                 observer=observer,
+                extra_body=cfg.llm.subagent_extra_body,
             )
             # Snapshot post-run memory (oracle + skills) into the run dir so
             # each trace carries an immutable record of what the next run will

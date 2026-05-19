@@ -86,8 +86,14 @@ class LLMAdapter(ABC):
         tool_choice: ToolChoice = "auto",
         max_output_tokens: int | None = None,
         temperature: float | None = None,
+        extra_body: dict[str, Any] | None = None,
     ) -> LLMResponse:
         """Send one request, return canonical response.
+
+        ``extra_body`` is merged into the JSON request body verbatim and is
+        the escape hatch for provider-specific parameters that have no
+        canonical equivalent (e.g. ``{"enable_thinking": true,
+        "thinking_budget": 8192}`` for MiMo / DeepSeek-R1 reasoning models).
 
         Subclasses MUST NOT perform retry, usage accounting, or budget
         checks here — those are cross-cutting concerns handled by

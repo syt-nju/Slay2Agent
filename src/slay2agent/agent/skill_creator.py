@@ -249,6 +249,7 @@ def run_skill_creator(
     new_state_type: str,
     max_steps: int = 12,
     observer: RunObserver | None = None,
+    extra_body: dict | None = None,
 ) -> None:
     """Run the skill_creator sub-agent for a completed gameplay segment.
 
@@ -288,7 +289,8 @@ def run_skill_creator(
         tools = _all_tools()
 
         for _step in range(max_steps):
-            resp = call_with_retry(lambda: adapter.chat(conversation, tools, tool_choice="auto"))
+            resp = call_with_retry(lambda: adapter.chat(conversation, tools, tool_choice="auto",
+                                                        extra_body=extra_body))
             tracker.record(_AGENT_ROLE, resp.model, resp.usage)
             all_usage["input_tokens"] += resp.usage.input_tokens
             all_usage["output_tokens"] += resp.usage.output_tokens

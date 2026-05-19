@@ -56,6 +56,8 @@ class StepRecord:
     tool_result_state_type: str | None
     # Compact view of state after settle
     settled_state_summary: str
+    # Loop warning: raw MCP state was injected into the tool result
+    loop_warning_raw_injected: bool = False
 
 
 @dataclass

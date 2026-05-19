@@ -866,6 +866,20 @@ def _render_card_select(state: ParsedState, view: CardSelectView) -> str:
     for c in view.cards:
         rarity = f" [{c.rarity}]" if c.rarity else ""
         lines.append(f"  - [{c.index}] ({c.cost}) {c.name}{rarity} — {c.description}")
+    # Explicit action guidance for two-step grid selection (select → confirm).
+    # "choose" type picks immediately with select_card; no confirm step needed.
+    if view.screen_type != "choose":
+        if view.preview_showing and view.can_confirm:
+            lines.append(
+                "⚡ Selection complete (preview showing). "
+                "Call confirm_selection NOW to finalize. "
+                "(Or select_card to toggle a card if you want to change.)"
+            )
+        elif view.can_confirm:
+            lines.append(
+                "⚡ Grid selection: use select_card(index) to toggle cards, "
+                "then confirm_selection to finalize once preview appears."
+            )
     return "\n".join(lines)
 
 

@@ -84,6 +84,8 @@ class LoopDetector:
     window_size: int = 10
     repeat_threshold: int = 4
     _history: list[tuple[str, str]] = field(default_factory=list)
+    last_warning_count: int = field(default=0, init=False)
+    """Count from the most recent soft warning (set by check_and_record)."""
 
     def reset(self) -> None:
         """Clear history (call on state-type transitions)."""
@@ -113,6 +115,7 @@ class LoopDetector:
             raise LoopDetected(action, args or {}, count, self.window_size)
 
         if count >= self.warning_threshold:
+            self.last_warning_count = count
             logger.warning(
                 "loop_detector: %r %s repeated %d times — soft warning issued",
                 action,

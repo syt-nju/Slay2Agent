@@ -187,6 +187,7 @@ class OpenAICompatibleAdapter(LLMAdapter):
         tool_choice: ToolChoice = "auto",
         max_output_tokens: int | None = None,
         temperature: float | None = None,
+        extra_body: dict[str, Any] | None = None,
     ) -> LLMResponse:
         kwargs: dict[str, Any] = {
             "model": self.model,
@@ -201,6 +202,8 @@ class OpenAICompatibleAdapter(LLMAdapter):
             kwargs["max_tokens"] = max_output_tokens
         if temperature is not None:
             kwargs["temperature"] = temperature
+        if extra_body:
+            kwargs["extra_body"] = extra_body
 
         resp = self._client.chat.completions.create(**kwargs)
         return _from_openai_response(resp)
