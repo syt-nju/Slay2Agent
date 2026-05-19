@@ -1,4 +1,4 @@
-"""OpenRouter adapter tests (§9.4).
+"""OpenAI-compatible adapter tests (§9.4 / F-010).
 
 Covers the three translation functions and the full ``chat()`` round-trip
 with a mocked OpenAI SDK client.
@@ -12,8 +12,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from slay2agent.llm.openrouter import (
-    OpenRouterAdapter,
+from slay2agent.llm.openai_compat import (
+    OpenAICompatibleAdapter,
     _from_openai_response,
     _to_openai_messages,
     _to_openai_tools,
@@ -156,7 +156,7 @@ def test_malformed_tool_arguments_logged_and_preserved(caplog):
         id="call_bad",
         function=SimpleNamespace(name="echo", arguments="not-json"),
     )
-    with caplog.at_level("ERROR", logger="slay2agent.llm.openrouter"):
+    with caplog.at_level("ERROR", logger="slay2agent.llm.openai_compat"):
         resp = _from_openai_response(
             _fake_completion(
                 content=None, tool_calls=[fake_tc], finish_reason="tool_calls"
@@ -180,16 +180,20 @@ def test_unknown_finish_reason_defaults_to_stop():
     assert resp.stop_reason == "stop"
 
 
-# ── OpenRouterAdapter.chat() ─────────────────────────────────────────────
+# ── OpenAICompatibleAdapter.chat() ──────────────────────────────────────
 
 
 @pytest.fixture
 def adapter(monkeypatch):
     mock_client = MagicMock()
     monkeypatch.setattr(
-        "slay2agent.llm.openrouter.openai.OpenAI", lambda **_kw: mock_client
+        "slay2agent.llm.openai_compat.openai.OpenAI", lambda **_kw: mock_client
     )
-    adapter = OpenRouterAdapter(model="anthropic/claude-sonnet-4", api_key="sk-test")
+    adapter = OpenAICompatibleAdapter(
+        model="anthropic/claude-sonnet-4",
+        api_key="sk-test",
+        base_url="https://openrouter.ai/api/v1",
+    )
     return adapter, mock_client
 
 

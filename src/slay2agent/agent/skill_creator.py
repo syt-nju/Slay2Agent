@@ -26,8 +26,7 @@ from typing import Any
 
 from slay2agent.agent.trace import SubagentRecord, TraceWriter
 from slay2agent.agent.tool_bridge import _memory_tool_schemas
-from slay2agent.llm.openrouter import OpenRouterAdapter
-from slay2agent.llm.protocol import Message, ToolCall, ToolSchema
+from slay2agent.llm.protocol import LLMAdapter, Message, ToolCall, ToolSchema
 from slay2agent.llm.retry import call_with_retry
 from slay2agent.llm.usage import UsageTracker
 from slay2agent.memory.oracle import read_oracle
@@ -241,7 +240,7 @@ def run_skill_creator(
     prev_l0: list[Message],
     skill_registry: SkillRegistry,
     oracle_path: Path,
-    adapter: OpenRouterAdapter,
+    adapter: LLMAdapter,
     tracker: UsageTracker,
     trace: TraceWriter,
     *,
@@ -262,7 +261,7 @@ def run_skill_creator(
         prev_l0: The completed L0 history from the previous state_type segment.
         skill_registry: The shared SkillRegistry (write methods will be called).
         oracle_path: Path to oracle.md for read-only context injection.
-        adapter: Shared OpenRouterAdapter.
+        adapter: Shared LLMAdapter.
         tracker: Shared UsageTracker (calls recorded under "skill_creator").
         trace: Shared TraceWriter (result written to subagent.jsonl).
         model: LLM model slug.

@@ -1,7 +1,7 @@
 """slay2agent unified CLI.
 
 Subcommands:
-    smoke    Run the OpenRouter live smoke test (F-002).
+    smoke    Run the live LLM smoke test (F-002).
     inspect  Print current STS2MCP state via the game REST client (F-003).
     play     Run the Phase 1 demo loop (F-005).
     config   Print effective configuration (with secrets masked).
@@ -125,7 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_config = sub.add_parser("config", help="Print effective config (secrets masked).")
     p_config.set_defaults(func=_cmd_config)
 
-    p_smoke = sub.add_parser("smoke", help="Live LLM smoke test (needs OPENROUTER_API_KEY).")
+    p_smoke = sub.add_parser("smoke", help="Live LLM smoke test (needs LLM_API_KEY).")
     p_smoke.add_argument("--model", default=None, help="Override model slug.")
     p_smoke.set_defaults(func=_cmd_smoke)
 
@@ -144,7 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_play.add_argument(
         "--model", default=None,
-        help="Override OPENROUTER_MODEL for this run (default: env / config).",
+        help="Override LLM_MODEL for this run (default: env / config).",
     )
     p_play.add_argument(
         "--character", default="IRONCLAD", help="Character id (default: IRONCLAD)."

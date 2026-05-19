@@ -14,9 +14,10 @@ from slay2agent.config import (
 @pytest.fixture(autouse=True)
 def _isolated_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in (
-        "OPENROUTER_API_KEY",
-        "OPENROUTER_MODEL",
-        "OPENROUTER_TIMEOUT",
+        "LLM_API_KEY",
+        "LLM_MODEL",
+        "LLM_TIMEOUT",
+        "LLM_BASE_URL",
         "STS2MCP_BASE_URL",
         "STS2MCP_TIMEOUT",
     ):
@@ -31,9 +32,9 @@ def test_llm_config_defaults_when_env_empty() -> None:
 
 
 def test_llm_config_picks_up_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
-    monkeypatch.setenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4")
-    monkeypatch.setenv("OPENROUTER_TIMEOUT", "45")
+    monkeypatch.setenv("LLM_API_KEY", "sk-or-test")
+    monkeypatch.setenv("LLM_MODEL", "anthropic/claude-sonnet-4")
+    monkeypatch.setenv("LLM_TIMEOUT", "45")
     cfg = LLMConfig.from_env()
     assert cfg.api_key == "sk-or-test"
     assert cfg.model == "anthropic/claude-sonnet-4"
@@ -42,7 +43,7 @@ def test_llm_config_picks_up_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_llm_config_require_api_key_raises_when_missing() -> None:
     cfg = LLMConfig.from_env()
-    with pytest.raises(RuntimeError, match="OPENROUTER_API_KEY"):
+    with pytest.raises(RuntimeError, match="LLM_API_KEY"):
         cfg.require_api_key()
 
 
@@ -61,7 +62,7 @@ def test_game_config_picks_up_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_config_load_skips_dotenv_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    monkeypatch.setenv("LLM_API_KEY", "sk-or-test")
     monkeypatch.setenv("STS2MCP_BASE_URL", "http://127.0.0.1:8080")
     cfg = Config.load(dotenv=False)
     assert cfg.llm.api_key == "sk-or-test"

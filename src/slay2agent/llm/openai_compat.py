@@ -1,10 +1,18 @@
-"""OpenRouter adapter (OpenAI-compatible endpoint).
+"""OpenAI-compatible LLM adapter.
+
+Works against any OpenAI-compatible endpoint — OpenAI native, OpenRouter,
+vLLM, DeepSeek, Together AI, etc. — by accepting ``base_url`` as a config
+parameter.
 
 Translation surface area is intentionally thin — the OpenAI schema is also
 our canonical shape, so the only real work is:
   * arguments: dict <-> JSON string at message/response boundaries
   * tool schema: wrap in ``{"type": "function", "function": {...}}``
   * stop_reason: collapse to {stop, tool_calls, length, error}
+
+OpenRouter-specific headers (HTTP-Referer, X-Title) are injected automatically
+when ``base_url`` contains ``openrouter.ai``; all other providers are
+unaffected.
 """
 
 from __future__ import annotations
@@ -28,11 +36,17 @@ from slay2agent.llm.protocol import (
 
 logger = logging.getLogger(__name__)
 
-_BASE_URL = "https://openrouter.ai/api/v1"
-_DEFAULT_HEADERS = {
+_OPENROUTER_HEADERS = {
     "HTTP-Referer": "https://github.com/slay2agent/slay2agent",
     "X-Title": "slay2agent",
 }
+
+
+def _openrouter_headers_for(base_url: str) -> dict[str, str]:
+    """Return OpenRouter-specific headers if the base URL points to openrouter.ai."""
+    if "openrouter.ai" in base_url:
+        return _OPENROUTER_HEADERS
+    return {}
 
 
 def _to_openai_messages(messages: list[Message]) -> list[dict[str, Any]]:
@@ -55,6 +69,10 @@ def _to_openai_messages(messages: list[Message]) -> list[dict[str, Any]]:
                 }
                 for tc in m.tool_calls
             ]
+        # Reasoning models (e.g. MiMo, DeepSeek-R1) require the chain-of-thought
+        # to be round-tripped back in every subsequent assistant message.
+        if m.role == "assistant" and m.reasoning_content is not None:
+            d["reasoning_content"] = m.reasoning_content
         out.append(d)
     return out
 
@@ -110,11 +128,14 @@ def _from_openai_response(resp: Any) -> LLMResponse:
         output_tokens=int(getattr(usage_raw, "completion_tokens", 0) or 0),
     )
 
+    reasoning_content = getattr(msg, "reasoning_content", None) or None
+
     return LLMResponse(
         message=Message(
             role="assistant",
             content=msg.content,
             tool_calls=tool_calls,
+            reasoning_content=reasoning_content,
         ),
         usage=usage,
         stop_reason=stop_reason,
@@ -123,14 +144,39 @@ def _from_openai_response(resp: Any) -> LLMResponse:
     )
 
 
-class OpenRouterAdapter(LLMAdapter):
-    def __init__(self, model: str, api_key: str, timeout: float = 120.0):
+class OpenAICompatibleAdapter(LLMAdapter):
+    """LLM adapter for any OpenAI-compatible endpoint.
+
+    Args:
+        model:        Model slug to pass to the API.
+        api_key:      API key for the provider.
+        base_url:     Base URL of the OpenAI-compatible endpoint.
+                      Examples:
+                        - OpenAI:     ``https://api.openai.com/v1``
+                        - OpenRouter: ``https://openrouter.ai/api/v1``
+                        - vLLM:       ``http://localhost:8000/v1``
+        extra_headers: Additional HTTP headers to send with every request.
+                       Headers for ``openrouter.ai`` are injected automatically;
+                       set this for any other provider-specific headers.
+        timeout:      HTTP timeout in seconds.
+    """
+
+    def __init__(
+        self,
+        model: str,
+        api_key: str,
+        base_url: str,
+        *,
+        extra_headers: dict[str, str] | None = None,
+        timeout: float = 120.0,
+    ):
         super().__init__(model)
+        headers = {**_openrouter_headers_for(base_url), **(extra_headers or {})}
         self._client = openai.OpenAI(
             api_key=api_key,
-            base_url=_BASE_URL,
+            base_url=base_url,
             timeout=timeout,
-            default_headers=_DEFAULT_HEADERS,
+            default_headers=headers if headers else None,
         )
 
     def chat(

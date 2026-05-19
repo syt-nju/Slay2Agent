@@ -1,8 +1,8 @@
-"""Live smoke test against OpenRouter.
+"""Live smoke test against any OpenAI-compatible LLM endpoint.
 
 Usage:
-    OPENROUTER_API_KEY=sk-or-... python -m slay2agent.llm.smoke
-    OPENROUTER_API_KEY=sk-or-... python -m slay2agent.llm.smoke --model=xiaomi/mimo-v2-flash
+    LLM_API_KEY=sk-... python -m slay2agent.llm.smoke
+    LLM_API_KEY=sk-... LLM_BASE_URL=https://openrouter.ai/api/v1 python -m slay2agent.llm.smoke --model=openai/gpt-4.1-mini
 """
 
 from __future__ import annotations
@@ -15,14 +15,16 @@ import sys
 from dotenv import load_dotenv
 
 from slay2agent.llm import (
+    LLMAdapter,
     Message,
-    OpenRouterAdapter,
+    OpenAICompatibleAdapter,
     ToolSchema,
     UsageTracker,
     call_with_retry,
 )
 
-DEFAULT_MODEL = "xiaomi/mimo-v2-flash"
+DEFAULT_MODEL = "openai/gpt-4.1-mini"
+DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 
 _ECHO_SCHEMA = ToolSchema(
     name="echo",
@@ -36,7 +38,7 @@ _ECHO_SCHEMA = ToolSchema(
 )
 
 
-def _scenario_plain_text(adapter: OpenRouterAdapter, tracker: UsageTracker) -> bool:
+def _scenario_plain_text(adapter: LLMAdapter, tracker: UsageTracker) -> bool:
     print("\n── scenario 1: plain text ──")
     resp = call_with_retry(
         lambda: adapter.chat(
@@ -59,7 +61,7 @@ def _scenario_plain_text(adapter: OpenRouterAdapter, tracker: UsageTracker) -> b
     return ok
 
 
-def _scenario_tool_call(adapter: OpenRouterAdapter, tracker: UsageTracker) -> bool:
+def _scenario_tool_call(adapter: LLMAdapter, tracker: UsageTracker) -> bool:
     print("\n── scenario 2: tool call ──")
     resp = call_with_retry(
         lambda: adapter.chat(
@@ -101,15 +103,16 @@ def main() -> int:
     )
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default=os.getenv("OPENROUTER_MODEL", DEFAULT_MODEL))
+    parser.add_argument("--model", default=os.getenv("LLM_MODEL", DEFAULT_MODEL))
     args = parser.parse_args()
 
-    api_key = os.getenv("OPENROUTER_API_KEY")
+    api_key = os.getenv("LLM_API_KEY")
     if not api_key:
-        print("OPENROUTER_API_KEY not set", file=sys.stderr)
+        print("LLM_API_KEY not set", file=sys.stderr)
         return 2
 
-    adapter = OpenRouterAdapter(model=args.model, api_key=api_key)
+    base_url = os.getenv("LLM_BASE_URL", DEFAULT_BASE_URL)
+    adapter = OpenAICompatibleAdapter(model=args.model, api_key=api_key, base_url=base_url)
     tracker = UsageTracker()
 
     results = [

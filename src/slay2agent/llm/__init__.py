@@ -5,7 +5,7 @@ from slay2agent.llm.errors import (
     TransientError,
     classify,
 )
-from slay2agent.llm.openrouter import OpenRouterAdapter
+from slay2agent.llm.openai_compat import OpenAICompatibleAdapter
 from slay2agent.llm.protocol import (
     AgentRole,
     LLMAdapter,
@@ -25,7 +25,7 @@ __all__ = [
     "LLMError",
     "LLMResponse",
     "Message",
-    "OpenRouterAdapter",
+    "OpenAICompatibleAdapter",
     "RateLimitError",
     "ToolCall",
     "ToolSchema",

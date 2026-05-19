@@ -21,6 +21,7 @@ Execution Mode(除非 memory 设计需要再次重审,届时回 Design Mode)。
 8. F-008b Skill Creator Sub-agent ✅
 9. F-008c Oracle Updater Sub-agent ✅
 10. F-009 Live Context Viewer ✅
+11. F-010 Provider-Agnostic LLM Config (OpenAI-Compatible Adapter) ✅
 
 F-005 / F-006 / F-007 互相耦合,会在同一个 phase 内推进:demo loop 走通必须有 tool bridge + trace。F-008a 是 F-008b/c 的硬前置(没有 skill 文件结构,sub-agent 无处写)。
 
@@ -152,6 +153,23 @@ Expected verification (已完成):
 - [x] `slay2agent play` 增加 `--live` / `--live-port` flags
 - [x] `--live` 时启动 `WebObserver` + HTTP server,终端打印访问地址
 - [x] server 在 run 结束后保持 30s 供最终查看,然后优雅关闭
+
+## Phase 5 — Provider-Agnostic LLM Config (F-010)
+
+### F-010 OpenAI-Compatible Adapter
+
+**背景:** `OpenRouterAdapter` 内部已用 `openai` SDK，只需把 `base_url` / `extra_headers` 参数化即可支持任意 OpenAI-compatible provider。
+
+- [x] `src/slay2agent/llm/openai_compat.py`:新建 `OpenAICompatibleAdapter`，接受 `base_url` + `extra_headers` 参数；`openrouter.ai` 自动注入 OpenRouter headers
+- [x] `src/slay2agent/llm/openrouter.py`:标记废弃或删除
+- [x] `src/slay2agent/llm/__init__.py`:导出 `OpenAICompatibleAdapter`，移除 `OpenRouterAdapter`
+- [x] `src/slay2agent/config.py`:env vars 改为 `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` / `LLM_TIMEOUT`；`require_api_key()` 错误消息更新
+- [x] `.env.example`:更新为新 env var 名，加 OpenRouter / OpenAI 原生使用示例
+- [x] `loop.py` / `skill_creator.py` / `oracle_updater.py`:类型标注 `LLMAdapter`，移除 `OpenRouterAdapter` import
+- [x] `smoke.py` / `cli.py`:使用新 env var 名，类型标注更新
+- [x] `tests/test_openrouter.py` → `tests/test_openai_compat.py`:重命名 + import 对齐新类名
+- [x] `tests/test_config.py`:env vars 更新为 `LLM_*`
+- [x] 全部离线测试绿（252 passed）
 
 ## 持续任务 — Memory Iteration Log
 

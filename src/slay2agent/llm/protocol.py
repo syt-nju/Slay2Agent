@@ -36,6 +36,13 @@ class Message:
     content: str | None = None
     tool_calls: list[ToolCall] | None = None
     tool_call_id: str | None = None
+    reasoning_content: str | None = None
+    """Chain-of-thought text returned by reasoning models (e.g. MiMo, DeepSeek-R1).
+
+    Must be passed back verbatim in subsequent API calls to providers that
+    require it (e.g. Xiaomi MiMo, any model using OpenAI-compatible
+    ``reasoning_content`` round-tripping).  ``None`` for non-reasoning models.
+    """
 
 
 @dataclass

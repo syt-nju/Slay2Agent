@@ -31,7 +31,7 @@ slay2agent 是一个**研究型 testbed**,用于探索"什么样的 memory 与 c
 - 不追求胜率 / Act 通关进度作为成功条件。
 - 不做横向对照 baseline(无 memory-off 对照、无人类对比、无外部 bot 对比)。
 - 不做自动开新 run、不做菜单跨局自动重启,memory dir 不内置版本切换(用户用 git 管理)。
-- 不做批量 eval / replay 工具 / 多 provider 原生适配 / LLM 自动改写 prompt 模板。
+- 不做批量 eval / replay 工具 / LLM 自动改写 prompt 模板。
 - 不在主 agent 暴露 python exec、compact 等通用代码执行类工具。
 - 阶段一不解决高 ascension / 多角色全覆盖,默认 Ironclad + A0;角色与 ascension 通过配置可改但需游戏内已解锁。
 
@@ -200,6 +200,24 @@ trace 是 memory 设计迭代的唯一研究素材,必须在 F-008 之前可用�
 - 不做多 run 并发查看。
 - 不做前端 build pipeline(无 npm/node)。
 - 不做用户从浏览器操控 Agent。
+
+### F-010 Provider-Agnostic LLM Config (OpenAI-Compatible Adapter)
+
+**Status:** planned
+
+**背景:** 当前 `OpenRouterAdapter` 内部已经使用 `openai` Python SDK，以 `base_url="https://openrouter.ai/api/v1"` 指向 OpenRouter。本 feature 将 `base_url`、`api_key`、`extra_headers` 参数化，使同一适配层可以无代码变更地切换到任意 OpenAI-compatible endpoint（OpenAI 原生 / vLLM / DeepSeek / Together AI 等）。
+
+**Acceptance criteria**
+
+- 新类 `OpenAICompatibleAdapter(model, api_key, base_url, *, extra_headers=None, timeout=120.0)` 替换 `OpenRouterAdapter`；对 `LLMAdapter` ABC 的实现保持不变。
+- 当 `base_url` 包含 `openrouter.ai` 时，自动注入 `HTTP-Referer` 与 `X-Title` extra headers；其他 provider 不注入。
+- 配置层 env vars 改为 provider-agnostic 命名：`LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` / `LLM_TIMEOUT`。旧 `OPENROUTER_*` 系列 **不再支持**（breaking change）。`.env.example` 同步更新，注释说明 OpenRouter 与 OpenAI 原生的配置示例。
+- `LLMConfig.require_api_key()` 的错误消息改为引用 `LLM_API_KEY`。
+- `loop.py` / `skill_creator.py` / `oracle_updater.py` / `smoke.py` / `cli.py` 的 adapter 类型标注全部改为 `LLMAdapter`（ABC），**`llm/` 包外不允许 import 任何具体 adapter 类**。
+- `slay2agent smoke` CLI 的帮助文字和环境变量检查使用新 env var 名。
+- 测试文件 `tests/test_openrouter.py` 重命名为 `tests/test_openai_compat.py`，import 路径和测试逻辑对齐新类名；`tests/test_config.py` 更新为 `LLM_*` env vars。
+- 无新增 Python 依赖（`openai` SDK 已在 `pyproject.toml` 中）。
+- 所有现有离线测试（mock/fixture，不依赖真实 API key）继续全绿。
 
 ## Open Questions
 

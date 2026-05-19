@@ -8,9 +8,10 @@ from slay2agent.cli import _mask, build_parser, main
 @pytest.fixture(autouse=True)
 def _isolated_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in (
-        "OPENROUTER_API_KEY",
-        "OPENROUTER_MODEL",
-        "OPENROUTER_TIMEOUT",
+        "LLM_API_KEY",
+        "LLM_MODEL",
+        "LLM_TIMEOUT",
+        "LLM_BASE_URL",
         "STS2MCP_BASE_URL",
         "STS2MCP_TIMEOUT",
     ):
@@ -49,7 +50,7 @@ def test_parser_known_subcommands() -> None:
 def test_config_subcommand_prints_masked_values(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-1234567890abcdef")
+    monkeypatch.setenv("LLM_API_KEY", "sk-or-1234567890abcdef")
     rc = main(["config"])
     out = capsys.readouterr().out
     assert rc == 0

@@ -42,7 +42,11 @@ Game HTTP Client (STS2MCP REST)
 
 ### LLM Adapter
 
-`src/slay2agent/llm/`:统一云端模型调用。canonical dataclass + provider 适配。首版只接 OpenRouter。
+`src/slay2agent/llm/`:统一云端模型调用。canonical dataclass + provider 适配。
+
+**核心类:** `OpenAICompatibleAdapter(model, api_key, base_url, *, extra_headers=None, timeout)` — 使用 `openai` Python SDK，通过 `base_url` 参数可连接任意 OpenAI-compatible endpoint（OpenAI 原生、OpenRouter、vLLM、DeepSeek 等）。当 `base_url` 包含 `openrouter.ai` 时自动注入 OpenRouter 专用 headers，其余 provider 无需特殊处理。
+
+**配置:** `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` / `LLM_TIMEOUT`（`config.py` 从 env 读取）。`LLMAdapter` ABC 是唯一允许在 `llm/` 包外引用的类型；具体 adapter 类不出现在 agent 层。
 
 usage 按 `(agent_role, model)` 分桶记录 input/output token。`agent_role: Literal["main","skill_creator","oracle_updater"]` 是上层语义,**adapter 不感知** —— orchestrator / sub-agent runner 拿到 `LLMResponse` 后调 `tracker.record(role, resp.model, resp.usage)`。这一拆分是 trace 与 run summary 报告"三类 agent 各自 token"的硬基础。
 
@@ -213,7 +217,7 @@ run termination
 - skill body 是否需要长度上限。
 - skill creator 是否限制每小关最多写 N 个 skill。
 - `oracle.md` 4k tokens 软上限是否合适。
-- 是否引入第二个 LLM provider。
+- 是否引入第二个 LLM provider。**→ F-010 已实现为 OpenAI-compatible 通用适配层，不再 deferred。**
 - loop_detector 的 `window_size=10` / `repeat_threshold=4` 默认是否合适。
 - 是否允许主 agent 在 prompt 里以 "thought" 段方式 reason 后再 tool call。
 - skill creator 是否改为限时异步(首版同步阻塞)。

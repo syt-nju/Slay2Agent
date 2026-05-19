@@ -12,27 +12,30 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-DEFAULT_LLM_MODEL = "openai/gpt-5.4-mini"
+DEFAULT_LLM_MODEL = "openai/gpt-4.1-mini"
+DEFAULT_LLM_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 @dataclass(frozen=True)
 class LLMConfig:
     model: str = DEFAULT_LLM_MODEL
     api_key: str | None = None
+    base_url: str = DEFAULT_LLM_BASE_URL
     timeout: float = 120.0
 
     @classmethod
     def from_env(cls) -> "LLMConfig":
         return cls(
-            model=os.getenv("OPENROUTER_MODEL", DEFAULT_LLM_MODEL),
-            api_key=os.getenv("OPENROUTER_API_KEY"),
-            timeout=float(os.getenv("OPENROUTER_TIMEOUT", "120")),
+            model=os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL),
+            api_key=os.getenv("LLM_API_KEY"),
+            base_url=os.getenv("LLM_BASE_URL", DEFAULT_LLM_BASE_URL),
+            timeout=float(os.getenv("LLM_TIMEOUT", "120")),
         )
 
     def require_api_key(self) -> str:
         if not self.api_key:
             raise RuntimeError(
-                "OPENROUTER_API_KEY is not set. Put it in .env or export it."
+                "LLM_API_KEY is not set. Put it in .env or export it."
             )
         return self.api_key
 
