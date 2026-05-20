@@ -176,6 +176,24 @@ Expected verification (已完成):
 - 启动 F-008 阶段时创建 `docs/memory-iteration-log.md`,定义 entry schema(`version` / `change` / `motivation` / `observed`)
 - 每次对 memory 设计做有意义改动(skill schema、强插内容、sub-agent prompt、触发时机、工具集等)必须新增一条 entry
 
+## Phase 6 — Context Management (F-011 / F-012)
+
+### F-011 UnknownView Raw Payload Exposure + Issue Logging
+
+- [ ] `_render_unknown` 改为 dump `view.payload` JSON（截断 3000 chars）
+- [ ] 在 loop.py 中检测首次进入 UnknownView state_type，写 issue 到 `issues.jsonl`
+- [ ] 测试：UnknownView 渲染包含 payload 内容、截断生效、issue 写入
+
+### F-012 L0 Compaction Sub-agent
+
+- [ ] `config.py` 新增 `L0_COMPACT_THRESHOLD` / `L0_COMPACT_KEEP` / `L0_COMPACT_ENABLED` 配置
+- [ ] 实现 compactor sub-agent（prompt 模板 + 输入装配 + 摘要输出解析）
+- [ ] loop.py 集成：L0 超阈值时触发 compaction，替换旧消息为 summary
+- [ ] token 计入 `role="compactor"`，trace 写入 `subagent.jsonl`
+- [ ] 失败兜底：compaction 失败保留原始 L0
+- [ ] 测试：阈值触发、压缩后 L0 结构正确、失败不阻断
+- [ ] `memory-iteration-log.md` 新增 entry
+
 ## Open Blocks
 
 - 需要本地 STS2 + STS2MCP 运行环境做 F-005 起的端到端验证(无 GPU 要求,但需要游戏客户端)。

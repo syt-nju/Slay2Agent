@@ -952,15 +952,22 @@ def _render_game_over(state: ParsedState, view: GameOverView) -> str:
     return "\n".join(lines)
 
 
+_UNKNOWN_PAYLOAD_LIMIT = 3000
+
+
 def _render_unknown(state: ParsedState, view: UnknownView) -> str:
+    import json as _json
+
     lines = [f"## Unknown state — state_type={state.state_type}"]
     if state.run:
         lines.append(_fmt_run(state.run))
     if state.player:
         lines.append(_fmt_player_header(state.player, in_combat=False))
     if view.payload:
-        keys = ", ".join(sorted(view.payload.keys()))
-        lines.append(f"Top-level fields: {keys}")
+        payload_json = _json.dumps(view.payload, ensure_ascii=False, indent=2)
+        if len(payload_json) > _UNKNOWN_PAYLOAD_LIMIT:
+            payload_json = payload_json[:_UNKNOWN_PAYLOAD_LIMIT] + "\n... (truncated)"
+        lines.append("Raw payload:\n```json\n" + payload_json + "\n```")
     return "\n".join(lines)
 
 

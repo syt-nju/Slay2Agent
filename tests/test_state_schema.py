@@ -300,10 +300,44 @@ def test_event_prompt_skips_already_chosen_options() -> None:
 
 
 def test_unknown_state_prompt_lists_residual_keys() -> None:
+    """F-011: _render_unknown outputs full JSON payload, not just key names."""
     parsed = parse({"state_type": "weird", "foo": 1, "bar": 2})
     text = to_compact_prompt(parsed)
     assert "weird" in text
-    assert "bar" in text and "foo" in text
+    # Values should now appear (JSON serialization), not just key names.
+    assert '"foo": 1' in text or "foo" in text
+    assert '"bar": 2' in text or "bar" in text
+    # Should be wrapped in a json code fence.
+    assert "```json" in text
+
+
+def test_unknown_state_prompt_contains_payload_values() -> None:
+    """F-011: payload values (not just keys) appear in the compact prompt."""
+    parsed = parse({"state_type": "crystal_sphere", "grid": [[1, 2], [3, 4]], "selected": False})
+    text = to_compact_prompt(parsed)
+    assert "crystal_sphere" in text
+    assert "grid" in text
+    # The JSON value should appear verbatim.
+    assert "1" in text and "2" in text
+
+
+def test_unknown_state_prompt_truncates_large_payload() -> None:
+    """F-011: payload JSON is truncated at 3000 chars to prevent prompt explosion."""
+    big_value = "x" * 5000
+    parsed = parse({"state_type": "huge_state", "data": big_value})
+    text = to_compact_prompt(parsed)
+    assert "huge_state" in text
+    assert "(truncated)" in text
+    # The total payload section should not exceed 3000 + overhead chars.
+    assert len(text) < 3500
+
+
+def test_unknown_state_prompt_empty_payload() -> None:
+    """F-011: empty payload renders only the header without crashing."""
+    parsed = parse({"state_type": "empty_state"})
+    text = to_compact_prompt(parsed)
+    assert "empty_state" in text
+    assert "```json" not in text  # no payload block if nothing to show
 
 
 def test_to_compact_prompt_accepts_any_parsed_state() -> None:

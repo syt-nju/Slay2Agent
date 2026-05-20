@@ -30,9 +30,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from slay2agent.agent.issue_logger import log_loop_issue
+from slay2agent.agent.issue_logger import log_loop_issue, log_unknown_view_issue
 from slay2agent.agent.oracle_updater import run_oracle_updater
 from slay2agent.agent.skill_creator import run_skill_creator
+from slay2agent.agent.skill_librarian import run_skill_librarian
 from slay2agent.agent.tool_bridge import LoopDetected, LoopDetector, ToolBridge, MEMORY_TOOL_NAMES
 from slay2agent.agent.trace import (
     StepRecord,
@@ -42,7 +43,7 @@ from slay2agent.agent.trace import (
 )
 from slay2agent.config import Config
 from slay2agent.game.client import ActionError, GameClient
-from slay2agent.game.schema import CombatView, parse, to_compact_prompt
+from slay2agent.game.schema import CombatView, UnknownView, parse, to_compact_prompt
 from slay2agent.llm.openai_compat import OpenAICompatibleAdapter
 from slay2agent.llm.protocol import AgentRole, LLMAdapter, Message, ToolCall
 from slay2agent.llm.retry import call_with_retry
@@ -230,6 +231,8 @@ def run_demo_loop(
         l0: list[Message] = []
         prev_state_type: str | None = None
         step = 0
+        initial_skill_ids = frozenset(s.skill_id for s in skill_registry.list_skills())
+        seen_unknown_state_types: set[str] = set()
 
         try:
             while True:
@@ -237,6 +240,18 @@ def run_demo_loop(
                 parsed = parse(raw_state)
                 state_type = parsed.state_type
                 compact = to_compact_prompt(parsed)
+
+                # F-011: log first encounter of any unrecognised state_type so
+                # researchers can see which ones need a dedicated View.
+                if isinstance(parsed.view, UnknownView) and state_type not in seen_unknown_state_types:
+                    seen_unknown_state_types.add(state_type)
+                    log_unknown_view_issue(
+                        issues_path=cfg.memory.issues_path,
+                        run_id=run_id,
+                        step=step,
+                        state_type=state_type,
+                        payload_keys=list(parsed.view.payload.keys()),
+                    )
 
                 # Extract is_play_phase for combat states so the gate can block
                 # play_card / end_turn during enemy turn.
@@ -556,6 +571,20 @@ def run_demo_loop(
                 observer=observer,
                 extra_body=cfg.llm.subagent_extra_body,
             )
+
+            # Skill librarian: merge overlapping skills if new ones were created.
+            current_skill_ids = frozenset(s.skill_id for s in skill_registry.list_skills())
+            if current_skill_ids - initial_skill_ids:
+                run_skill_librarian(
+                    skill_registry=skill_registry,
+                    adapter=adapter,
+                    tracker=tracker,
+                    trace=trace,
+                    model=cfg.llm.model,
+                    observer=observer,
+                    extra_body=cfg.llm.subagent_extra_body,
+                )
+
             # Snapshot post-run memory (oracle + skills) into the run dir so
             # each trace carries an immutable record of what the next run will
             # start from.  Done after oracle_updater so the snapshot reflects

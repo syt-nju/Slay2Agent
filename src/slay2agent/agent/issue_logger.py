@@ -68,3 +68,41 @@ def log_loop_issue(
         )
     except Exception as exc:
         logger.error("issue_logger: failed to write issue: %s", exc)
+
+
+def log_unknown_view_issue(
+    *,
+    issues_path: Path,
+    run_id: str,
+    step: int,
+    state_type: str,
+    payload_keys: list[str],
+) -> None:
+    """Append one first-encounter UnknownView issue entry to ``issues_path``.
+
+    Fires only on the first time a given ``state_type`` is seen as UnknownView
+    in a run.  The entry records which state_type was unrecognised and which
+    top-level payload keys it carried — enough context to build a dedicated
+    View parser later.
+
+    Never raises — any I/O error is logged and swallowed so the main loop
+    is never interrupted by issue logging.
+    """
+    entry = {
+        "issue_type": "unknown_view",
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "run_id": run_id,
+        "step": step,
+        "state_type": state_type,
+        "payload_keys": sorted(payload_keys),
+    }
+    try:
+        issues_path.parent.mkdir(parents=True, exist_ok=True)
+        with issues_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        logger.info(
+            "issue_logger: recorded unknown_view issue at step %d (%s, keys=%s)",
+            step, state_type, payload_keys,
+        )
+    except Exception as exc:
+        logger.error("issue_logger: failed to write unknown_view issue: %s", exc)
