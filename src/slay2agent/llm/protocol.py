@@ -14,12 +14,12 @@ Role = Literal["system", "user", "assistant", "tool"]
 StopReason = Literal["stop", "tool_calls", "length", "error"]
 ToolChoice = Literal["auto", "required", "none"]
 
-AgentRole = Literal["main", "skill_creator", "oracle_updater"]
-"""Identifies which of the three agents made an LLM call.
+AgentRole = Literal["main", "skill_creator", "oracle_updater", "compactor"]
+"""Identifies which agent made an LLM call.
 
 Used by ``UsageTracker`` to bucket tokens by ``(agent_role, model)`` so that
-run summaries can report per-agent input/output totals even when all three
-agents share the same underlying model slug.
+run summaries can report per-agent input/output totals even when all agents
+share the same underlying model slug.
 """
 
 

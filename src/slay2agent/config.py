@@ -124,18 +124,34 @@ DEFAULT_AGENT_STATE_DIR = "agent_state"
 
 @dataclass(frozen=True)
 class MemoryConfig:
-    """Paths for the L1/L2 memory layer (skill library + oracle)."""
+    """Paths for the L1/L2 memory layer (skill library + oracle).
+
+    L0 Compaction config (F-012):
+      l0_compact_enabled    — set ``L0_COMPACT_ENABLED=false`` to disable.
+      l0_compact_threshold  — trigger compaction when len(l0) exceeds this value.
+      l0_compact_keep       — keep the most-recent K messages verbatim;
+                              everything older is replaced by a summary.
+    """
 
     agent_state_dir: Path = Path(DEFAULT_AGENT_STATE_DIR)
     oracle_max_tokens: int = 4000
+    l0_compact_enabled: bool = True
+    l0_compact_threshold: int = 30
+    l0_compact_keep: int = 6
 
     @classmethod
     def from_env(cls) -> "MemoryConfig":
+        compact_raw = os.getenv("L0_COMPACT_ENABLED")
         return cls(
             agent_state_dir=Path(
                 os.getenv("AGENT_STATE_DIR", DEFAULT_AGENT_STATE_DIR)
             ),
             oracle_max_tokens=int(os.getenv("ORACLE_MAX_TOKENS", "4000")),
+            l0_compact_enabled=(
+                compact_raw.lower() != "false" if compact_raw is not None else True
+            ),
+            l0_compact_threshold=int(os.getenv("L0_COMPACT_THRESHOLD", "30")),
+            l0_compact_keep=int(os.getenv("L0_COMPACT_KEEP", "6")),
         )
 
     @property

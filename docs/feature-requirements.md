@@ -219,6 +219,36 @@ trace 是 memory 设计迭代的唯一研究素材,必须在 F-008 之前可用�
 - 无新增 Python 依赖（`openai` SDK 已在 `pyproject.toml` 中）。
 - 所有现有离线测试（mock/fixture，不依赖真实 API key）继续全绿。
 
+### F-011 UnknownView Raw Payload Exposure + Issue Logging
+
+**Status:** planned
+
+**动机:** `UnknownView` 当前只输出 `Top-level fields: xxx`，agent 完全看不到实际游戏数据（如 crystal_sphere 的格子状态），导致在未适配 state_type 上盲人摸象。
+
+**Acceptance criteria**
+
+- `_render_unknown` 将 `view.payload` 序列化为 JSON 并包含在 compact prompt 中，截断上限 3000 chars 防止 prompt 爆炸。
+- 每当 agent 首次进入一个走 `UnknownView` 的 state_type 时，自动记录一条 issue 到 `issues.jsonl`，字段包含：`run_id`、`step`、`state_type`、`payload_keys`、timestamp。
+- issue 目的：暴露哪些 state_type 需要后续补专用 View，方便研究者事后排查。
+- 不影响已有专用 View 的 state_type 渲染逻辑。
+
+### F-012 L0 Compaction Sub-agent
+
+**Status:** planned
+
+**动机:** 同一 state_type 段落内 L0 无上限增长导致 O(n²) token 爆炸（实测 crystal_sphere 232 步烧掉单次 run 75% 的 input token）。滑动窗口会破坏 KV cache 命中率（前缀每步都变），因此改用 compaction sub-agent：在 L0 达到阈值时，由独立 sub-agent 将旧历史压缩为一条摘要 message，保持前缀稳定。
+
+**Acceptance criteria**
+
+- 当 L0 消息数超过可配置阈值（默认 `L0_COMPACT_THRESHOLD=30` 条 message）时，触发 compaction。
+- Compaction 由一个新 sub-agent（`role="compactor"`）执行：输入为当前 L0 全文，输出为一条摘要 message。
+- 摘要替换 L0 中最老的 N 条 message，保留最近 K 条原文不动（K 可配置），使得最近的上下文完整、远端上下文被压缩。
+- 压缩后的 L0 结构：`[summary_message] + [最近 K 条原文]`——前缀稳定，KV cache 可复用。
+- Compactor 共用基础设施（LLM adapter / token tracker / trace writer），token 计入独立 role `"compactor"`。
+- 触发失败不阻断主 agent（记录 `logger.error(...)`，保留原始 L0 继续运行）。
+- 可通过配置关闭（`L0_COMPACT_ENABLED=false`），默认开启。
+- compaction 事件写入 trace（`subagent.jsonl`），包含压缩前后 message 数、摘要内容。
+
 ## Open Questions
 
 - skill metadata 是否需要在 `name` + `description` 之外再加 `examples` / `tags` / `applicable_state_types` 等结构化字段 → v1 起对齐 mainstream,只保留 `name` + `description`(`description` 自带 "use when ..." 触发条件);后续若主 agent 召回不稳定,再考虑加结构化字段。

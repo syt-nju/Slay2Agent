@@ -35,3 +35,18 @@
   - `description` 把"用途 + 触发条件"压在同一字段，主 agent 只看一段文本就能决定是否 `read_skill`，对齐 progressive disclosure 习惯
   - 与 `.cursor/skills/*` 共用约定后，研究者复制公开 skill 或人工编辑摩擦最小
 - **observed**: （下一轮 run 后填写：观察 LLM 写出的 frontmatter 合规率、主 agent 在 metadata 注入下的 read_skill 命中率）
+
+---
+
+## v2 — L0 Compaction Sub-agent（F-012）
+
+- **version**: v2
+- **change**:
+  - 新增 `compactor` sub-agent，在 L0 消息数超过阈值（默认 `L0_COMPACT_THRESHOLD=30`）时触发
+  - Compaction 策略：保留最近 K 条原文（默认 `L0_COMPACT_KEEP=6`），将更早的消息压缩为一条 `role="user"` 摘要消息
+  - 压缩后 L0 结构：`[summary_user_msg] + [最近 K 条原文]`；前缀稳定，KV cache 可复用
+  - 新配置字段：`L0_COMPACT_ENABLED`（默认 true）、`L0_COMPACT_THRESHOLD`（默认 30）、`L0_COMPACT_KEEP`（默认 6）
+  - Token 计入独立 role `"compactor"`，compaction 事件写入 `subagent.jsonl`
+  - 失败不阻断主 agent，保留原始 L0 继续运行
+- **motivation**: 同一 state_type 段落（如 crystal_sphere 232 步）内 L0 无上限增长导致 O(n²) token 爆炸。滑动窗口方案会每步改变前缀，导致 KV cache 无法复用；compaction 在超阈值时一次性压缩旧历史，之后前缀保持稳定（summary + recent K），兼顾 token 控制与 cache 效率
+- **observed**: （运行后填写：compactor 实际触发频率、压缩前后 token 量对比、summary 质量、主 agent 在压缩后 L0 上的决策连贯性）

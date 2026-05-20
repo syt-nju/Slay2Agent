@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from slay2agent.agent.compactor import run_l0_compaction
 from slay2agent.agent.issue_logger import log_loop_issue, log_unknown_view_issue
 from slay2agent.agent.oracle_updater import run_oracle_updater
 from slay2agent.agent.skill_creator import run_skill_creator
@@ -339,6 +340,29 @@ def run_demo_loop(
                 if step == 0 and run_cfg.ascension >= 0:
                     user_content += f"\n\n(Hint: please select Ascension {run_cfg.ascension}.)"
                 user_msg = Message(role="user", content=user_content)
+
+                # ── F-012: L0 compaction ─────────────────────────────────────
+                mem_cfg = cfg.memory
+                if (
+                    mem_cfg.l0_compact_enabled
+                    and len(l0) > mem_cfg.l0_compact_threshold
+                    and len(l0) > mem_cfg.l0_compact_keep
+                ):
+                    l0 = run_l0_compaction(
+                        l0,
+                        compact_keep=mem_cfg.l0_compact_keep,
+                        adapter=adapter,
+                        tracker=tracker,
+                        trace=trace,
+                        model=cfg.llm.model,
+                        step=step,
+                        state_type=state_type,
+                        extra_body=cfg.llm.subagent_extra_body,
+                    )
+                    observer.on_memory_event(
+                        "l0_compacted",
+                        f"l0 now {len(l0)} msgs at step {step}",
+                    )
 
                 full_messages = [system_msg] + l0 + [user_msg]
                 tools = bridge.visible_tools(state_type, is_play_phase=is_play_phase)

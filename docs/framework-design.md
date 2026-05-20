@@ -211,6 +211,20 @@ run termination
 - 任何 memory 设计变更必须在 `docs/memory-iteration-log.md` 留下 entry。
 - Live viewer 通过 observer 协议挂载,不改变 loop 核心逻辑;viewer 故障不阻断 agent 运行。
 
+### L0 Compaction
+
+当同一 `state_type` 段落内 L0 消息数超过阈值时，触发 compaction sub-agent 压缩旧历史，避免 O(n²) token 增长。
+
+**设计要点：**
+
+- 阈值可配置（`L0_COMPACT_THRESHOLD`，默认 30 条 message）。
+- 触发时，将 L0 中除最近 K 条外的旧消息交给 compactor sub-agent，产出一条摘要 message。
+- 压缩后 L0 结构：`[summary_message] + [最近 K 条原文]`。前缀（system prompt + summary）在后续步骤中保持稳定，KV cache 可复用。
+- Compactor 是第四类 sub-agent（`role="compactor"`），共用基础设施。
+- 失败时保留原始 L0 继续运行，不阻断主 agent。
+
+**与滑动窗口的区别：** 滑动窗口每步丢弃最老消息导致前缀变化，KV cache 完全失效。Compaction 产出的 summary 是稳定前缀，仅在下次 compaction 时变化（频率远低于每步）。
+
 ## Deferred Decisions
 
 - skill metadata 是否需要在 `name` + `description` 之外再加结构化字段（`examples` / `tags` / `applicable_state_types` 等）—— v1 起已对齐 mainstream，只保留 `name` + `description`，`description` 自带 "use when ..." 触发条件。

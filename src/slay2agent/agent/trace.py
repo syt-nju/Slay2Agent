@@ -117,7 +117,7 @@ class TraceWriter:
         role_totals = tracker.role_totals()
         call_counts = tracker.role_call_counts()
 
-        all_roles = ["main", "skill_creator", "oracle_updater"]
+        all_roles = ["main", "skill_creator", "oracle_updater", "skill_librarian", "compactor"]
         token_summary: dict[str, dict[str, int]] = {}
         for role in all_roles:
             u = role_totals.get(role)  # type: ignore[arg-type]
