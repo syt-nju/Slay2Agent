@@ -760,7 +760,12 @@ def _render_combat(state: ParsedState, view: CombatView) -> str:
     lines.append(_fmt_player_header(p, in_combat=True))
     if p and p.status:
         lines.append(f"Player status: {_fmt_status_list(p.status)}")
-    phase_label = "YOUR TURN — you may play cards or end_turn" if view.is_play_phase else "ENEMY TURN — wait, do NOT play cards or end_turn"
+    if not view.is_play_phase:
+        phase_label = "ENEMY TURN — wait, do NOT play cards or end_turn"
+    elif p and p.energy == 0:
+        phase_label = "YOUR TURN — ⚠️ Energy is 0, you CANNOT play any cards. You MUST call end_turn."
+    else:
+        phase_label = "YOUR TURN — you may play cards or end_turn"
     lines.append(f"Round {view.round} | {phase_label}")
     lines.append(f"Relics: {_fmt_relics(p.relics) if p else '(none)'}")
     if p:
@@ -844,6 +849,7 @@ def _render_rewards(state: ParsedState, view: RewardsView) -> str:
         lines.append(_fmt_player_header(p, in_combat=False))
     for it in view.items:
         lines.append(f"  - [{it.index}] {it.type}: {it.description}")
+    lines.append("Actions: claim_reward(index) to collect an item; proceed to leave remaining rewards and continue.")
     return "\n".join(lines)
 
 

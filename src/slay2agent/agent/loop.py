@@ -231,6 +231,7 @@ def run_demo_loop(
         # L0: in-context conversation history (cleared on state_type change).
         l0: list[Message] = []
         prev_state_type: str | None = None
+        prev_is_play_phase: bool | None = None
         step = 0
         initial_skill_ids = frozenset(s.skill_id for s in skill_registry.list_skills())
         seen_unknown_state_types: set[str] = set()
@@ -261,6 +262,14 @@ def run_demo_loop(
                     if isinstance(parsed.view, CombatView)
                     else True
                 )
+
+                # Reset loop detector on enemy→player phase transition so that
+                # the agent correctly calling end_turn once per round doesn't
+                # accumulate into a false-positive loop detection.
+                if prev_is_play_phase is False and is_play_phase:
+                    loop_detector.reset()
+                    logger.debug("loop_detector: reset on player turn start (new round)")
+                prev_is_play_phase = is_play_phase
 
                 # ── L0 clear on state_type transition ───────────────────────
                 l0_cleared = False
