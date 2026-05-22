@@ -340,6 +340,102 @@ def test_unknown_state_prompt_empty_payload() -> None:
     assert "```json" not in text  # no payload block if nothing to show
 
 
+# ---------------------------------------------------------------------------
+# hand_select selected_cards
+# ---------------------------------------------------------------------------
+
+_HAND_SELECT_WITH_SELECTED: dict[str, Any] = {
+    "state_type": "hand_select",
+    "hand_select": {
+        "mode": "simple_select",
+        "prompt": "Choose a card to Exhaust.",
+        "cards": [
+            {
+                "id": "PERFECTED_STRIKE",
+                "name": "Perfected Strike",
+                "type": "Attack",
+                "cost": "2",
+                "star_cost": None,
+                "description": "Deal 6 damage for each Strike you own.",
+                "rarity": "Common",
+                "is_upgraded": False,
+                "keywords": [],
+                "index": 0,
+            },
+            {
+                "id": "BASH",
+                "name": "Bash",
+                "type": "Attack",
+                "cost": "2",
+                "star_cost": None,
+                "description": "Deal 8 damage. Apply 2 Vulnerable.",
+                "rarity": "Basic",
+                "is_upgraded": False,
+                "keywords": [],
+                "index": 1,
+            },
+        ],
+        "selected_cards": [
+            {
+                "id": "INFERNAL_BLADE",
+                "name": "Infernal Blade",
+                "type": "Attack",
+                "cost": "1",
+                "star_cost": None,
+                "description": "Add a random Attack into your hand. Exhaust.",
+                "rarity": "Uncommon",
+                "is_upgraded": False,
+                "keywords": [],
+                "index": 2,
+            }
+        ],
+        "can_confirm": True,
+    },
+}
+
+
+def test_parse_hand_select_selected_cards_populated() -> None:
+    """selected_cards from raw JSON are parsed into HandSelectView.selected_cards."""
+    parsed = parse(_HAND_SELECT_WITH_SELECTED)
+    assert isinstance(parsed.view, HandSelectView)
+    assert len(parsed.view.selected_cards) == 1
+    assert parsed.view.selected_cards[0].name == "Infernal Blade"
+    assert len(parsed.view.cards) == 2  # remaining selectable cards unchanged
+
+
+def test_parse_hand_select_selected_cards_empty_by_default() -> None:
+    """When the raw state has no selected_cards key, the field defaults to empty tuple."""
+    parsed = parse(_load("state_hand_select_simple_select.json"))
+    assert isinstance(parsed.view, HandSelectView)
+    assert parsed.view.selected_cards == ()
+
+
+def test_render_hand_select_shows_already_selected() -> None:
+    """Renderer includes 'Already selected' block listing staged cards."""
+    parsed = parse(_HAND_SELECT_WITH_SELECTED)
+    text = to_compact_prompt(parsed)
+    assert "Already selected" in text
+    assert "Infernal Blade" in text
+    assert "DESELECT" in text
+
+
+def test_render_hand_select_no_already_selected_when_empty() -> None:
+    """Renderer omits 'Already selected' block when no cards are staged."""
+    parsed = parse(_load("state_hand_select_simple_select.json"))
+    text = to_compact_prompt(parsed)
+    assert "Already selected" not in text
+    assert "Cards available to select" in text
+
+
+def test_render_hand_select_available_cards_still_rendered() -> None:
+    """Remaining selectable cards are still shown even when selected_cards is populated."""
+    parsed = parse(_HAND_SELECT_WITH_SELECTED)
+    text = to_compact_prompt(parsed)
+    assert "Perfected Strike" in text
+    assert "Bash" in text
+    assert "Cards available to select" in text
+
+
 def test_to_compact_prompt_accepts_any_parsed_state() -> None:
     """All 14 real fixtures produce a prompt without raising; a smoke check."""
     for name in _FIXTURES:

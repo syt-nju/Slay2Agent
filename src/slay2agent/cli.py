@@ -98,7 +98,8 @@ def _cmd_play(args: argparse.Namespace) -> int:
         print(f"Live viewer: {url}")
 
     try:
-        run_dir = run_demo_loop(cfg, run_cfg, observer=observer, tracker=shared_tracker)
+        import asyncio
+        run_dir = asyncio.run(run_demo_loop(cfg, run_cfg, observer=observer, tracker=shared_tracker))
         print(f"Run complete. Trace written to: {run_dir}")
         return 0
     except Exception as exc:

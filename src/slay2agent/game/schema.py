@@ -157,6 +157,7 @@ class HandSelectView:
     cards: tuple[Card, ...]
     can_confirm: bool
     enemies: tuple[Enemy, ...] = ()
+    selected_cards: tuple[Card, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -469,6 +470,7 @@ def _parse_hand_select(raw: dict[str, Any]) -> HandSelectView:
         cards=tuple(_parse_card(c) for c in hs.get("cards", []) or []),
         can_confirm=bool(hs.get("can_confirm", False)),
         enemies=tuple(_parse_enemy(e) for e in battle.get("enemies", []) or []),
+        selected_cards=tuple(_parse_card(c) for c in hs.get("selected_cards", []) or []),
     )
 
 
@@ -791,11 +793,15 @@ def _render_hand_select(state: ParsedState, view: HandSelectView) -> str:
     if view.prompt:
         lines.append(view.prompt)
     lines.append(f"can_confirm: {view.can_confirm}")
+    if view.selected_cards:
+        lines.append("Already selected (calling combat_select_card again will DESELECT):")
+        for c in view.selected_cards:
+            lines.append("  - " + _fmt_card_line(c))
     if view.enemies:
         lines.append("Enemies:")
         for e in view.enemies:
             lines.append("  - " + _fmt_enemy(e))
-    lines.append("Cards (select by index):")
+    lines.append("Cards available to select (by index):")
     for c in view.cards:
         lines.append("  - " + _fmt_card_line(c))
     return "\n".join(lines)

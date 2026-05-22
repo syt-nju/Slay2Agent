@@ -24,6 +24,7 @@ The agent does NOT expose python-exec, compact, or write-memory tools.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
@@ -72,6 +73,12 @@ Rules:
 - On rewards/card_reward, claim what is useful or skip.
 - list_skills / read_skill give you strategic memory. Each skill listed below already includes its trigger condition inside the description — call read_skill only when the description matches the current situation.
 - game_over means the run ended; you will be stopped automatically.
+
+hand_select rules:
+- combat_select_card(index) is a TOGGLE: if the card at that index is not yet selected it becomes selected (and disappears from the available list); if it is already in "Already selected", calling it again will DESELECT it.
+- Always check the "Already selected" list before calling combat_select_card to avoid accidentally toggling a card off.
+- can_confirm: True means the minimum required cards are selected and you MAY call combat_confirm_selection() to proceed. You can still select more cards first if the situation warrants it.
+- When you are satisfied with your selection, call combat_confirm_selection() to execute. Do NOT keep calling combat_select_card on an already-selected card.
 """
 
 
@@ -174,7 +181,7 @@ def _navigate_to_run_start(client: GameClient, character: str) -> None:
         dispatch(client, action, args)
 
 
-def run_demo_loop(
+async def run_demo_loop(
     cfg: Config,
     run_cfg: RunConfig,
     observer: RunObserver | None = None,
@@ -235,6 +242,7 @@ def run_demo_loop(
         step = 0
         initial_skill_ids = frozenset(s.skill_id for s in skill_registry.list_skills())
         seen_unknown_state_types: set[str] = set()
+        _skill_creator_tasks: list[asyncio.Task[None]] = []
 
         try:
             while True:
@@ -283,20 +291,25 @@ def run_demo_loop(
                         l0 = []
                         l0_cleared = True
                         observer.on_memory_event("L0_cleared", f"{prev_state_type} → {state_type}")
-                        # F-008b: run skill creator on the completed segment
-                        run_skill_creator(
-                            prev_l0=prev_l0_segment,
-                            skill_registry=skill_registry,
-                            oracle_path=oracle_path,
-                            adapter=adapter,
-                            tracker=tracker,
-                            trace=trace,
-                            model=cfg.llm.model,
-                            prev_state_type=prev_state_type,
-                            new_state_type=state_type,
-                            observer=observer,
-                            extra_body=cfg.llm.subagent_extra_body,
+                        # F-008b: run skill creator on the completed segment (background asyncio task)
+                        _task = asyncio.create_task(
+                            asyncio.to_thread(
+                                run_skill_creator,
+                                prev_l0_segment,
+                                skill_registry,
+                                oracle_path,
+                                adapter,
+                                tracker,
+                                trace,
+                                model=cfg.llm.model,
+                                prev_state_type=prev_state_type,
+                                new_state_type=state_type,
+                                observer=observer,
+                                extra_body=cfg.llm.subagent_extra_body,
+                            ),
+                            name=f"skill_creator_{prev_state_type}_{state_type}",
                         )
+                        _skill_creator_tasks.append(_task)
                     # Reset loop detector so actions from one screen don't
                     # pollute the window for the next.
                     loop_detector.reset()
@@ -586,6 +599,12 @@ def run_demo_loop(
             observer.on_run_end("error", step)
 
         finally:
+            # Wait for any background skill_creator tasks to finish before
+            # reloading the registry, so the reload picks up all their writes.
+            if _skill_creator_tasks:
+                logger.info("waiting for %d background skill_creator task(s)…", len(_skill_creator_tasks))
+                await asyncio.gather(*_skill_creator_tasks, return_exceptions=True)
+
             # Reload skill registry at run end so next run picks up all changes
             # made by skill_creator during this run (kept stable mid-run for KV cache).
             skill_registry.reload()
