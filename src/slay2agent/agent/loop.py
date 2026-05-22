@@ -70,7 +70,8 @@ Rules:
 - CRITICAL: Call exactly ONE tool per response. Never call multiple tools at once. Never reply with plain text only.
 - Use menu_select to navigate any remaining menu screens (e.g. ascension selection).
 - On the map, choose_map_node to advance.
-- On rewards/card_reward, claim what is useful or skip.
+- On rewards screen: claim_reward(index) claims a reward. IMPORTANT: Card rewards open a card selection overlay and require select_card_reward(index) after selection.
+- On card_reward screen: select_card_reward(index) to pick a card (can select multiple if allowed), then you may proceed or select more.
 - list_skills / read_skill give you strategic memory. Each skill listed below already includes its trigger condition inside the description — call read_skill only when the description matches the current situation.
 - game_over means the run ended; you will be stopped automatically.
 

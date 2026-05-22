@@ -804,6 +804,14 @@ def _render_hand_select(state: ParsedState, view: HandSelectView) -> str:
     lines.append("Cards available to select (by index):")
     for c in view.cards:
         lines.append("  - " + _fmt_card_line(c))
+    
+    # Explicit action guidance: when ready, must call combat_confirm_selection.
+    if view.can_confirm:
+        lines.append(
+            "⚡ Selection complete. Call combat_confirm_selection NOW to proceed. "
+            "(Or combat_select_card(index) to change your selection.)"
+        )
+    
     return "\n".join(lines)
 
 
@@ -855,7 +863,13 @@ def _render_rewards(state: ParsedState, view: RewardsView) -> str:
         lines.append(_fmt_player_header(p, in_combat=False))
     for it in view.items:
         lines.append(f"  - [{it.index}] {it.type}: {it.description}")
-    lines.append("Actions: claim_reward(index) to collect an item; proceed to leave remaining rewards and continue.")
+    lines.append("")
+    lines.append("⚠️ TWO-STEP PROCESS FOR CARD REWARDS:")
+    lines.append("  - claim_reward(index) opens the card selection screen")
+    lines.append("  - After selection, you MUST call select_card_reward(index) to confirm your choice")
+    lines.append("")
+    lines.append("Other reward types (potion, gold, relic) apply immediately when claimed.")
+    lines.append("Actions: claim_reward(index) to collect an item; proceed to leave and continue.")
     return "\n".join(lines)
 
 
