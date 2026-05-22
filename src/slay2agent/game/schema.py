@@ -806,10 +806,21 @@ def _render_hand_select(state: ParsedState, view: HandSelectView) -> str:
         lines.append("  - " + _fmt_card_line(c))
     
     # Explicit action guidance: when ready, must call combat_confirm_selection.
+    selected_count = len(view.selected_cards)
     if view.can_confirm:
         lines.append(
-            "⚡ Selection complete. Call combat_confirm_selection NOW to proceed. "
-            "(Or combat_select_card(index) to change your selection.)"
+            f"⚡ Selection complete ({selected_count} selected). "
+            "Call combat_confirm_selection NOW to proceed. "
+            "(Or combat_select_card(index) to change your selection — "
+            "selecting an already-selected card will DESELECT it.)"
+        )
+    else:
+        lines.append(
+            f"Currently selected: {selected_count} card(s). "
+            "Use combat_select_card(card_index) to select or deselect cards "
+            "(selecting an already-selected card will DESELECT it). "
+            "The requirement is described above — keep adjusting until "
+            "can_confirm becomes True, then call combat_confirm_selection to proceed."
         )
     
     return "\n".join(lines)
@@ -878,6 +889,17 @@ def _render_card_reward(state: ParsedState, view: CardRewardView) -> str:
     for c in view.cards:
         rarity = f" [{c.rarity}]" if c.rarity else ""
         lines.append(f"  - [{c.index}] ({c.cost}) {c.name}{rarity} — {c.description}")
+    lines.append("")
+    if view.can_skip:
+        lines.append(
+            "Actions: select_card_reward(card_index) to add a card to your deck; "
+            "skip_card_reward to take nothing and return to the rewards screen."
+        )
+    else:
+        lines.append(
+            "Actions: select_card_reward(card_index) to add a card to your deck "
+            "(skipping is not allowed here)."
+        )
     return "\n".join(lines)
 
 

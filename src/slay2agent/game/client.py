@@ -115,15 +115,17 @@ class GameClient:
         self,
         action: str,
         *,
-        settle_delay: float = 0.05,
+        settle_delay: float = 0.15,
         **params: Any,
     ) -> dict[str, Any]:
         """POST an action, briefly wait, then re-read state.
 
-        STS2MCP responds synchronously, but a tiny pause before re-reading
-        guards against the "end_turn -> get_state shows old hand" race seen
-        when the engine still has a queued animation tick. Callers needing
-        stricter convergence can poll ``get_state`` themselves.
+        STS2MCP responds synchronously, but a short pause before re-reading
+        guards against state-transition races (e.g. claim_reward opening the
+        card_reward screen, or combat_select_card flipping can_confirm). 0.15 s
+        is enough for the game engine to process screen changes without
+        noticeably slowing down the run. Callers needing stricter convergence
+        can poll ``get_state`` themselves.
         """
         self.post_action(action, **params)
         if settle_delay > 0:
