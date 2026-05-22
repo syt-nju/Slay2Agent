@@ -2,7 +2,7 @@
 
 一个 **train-free** 的 Agent 框架，目标是驱动云端 LLM 自主通关 *Slay the Spire 2*。
 
-不训练任何模型、不读屏幕、不模拟键鼠。游戏状态与动作只走 [STS2MCP](https://github.com/Gennadiyev/STS2MCP) mod 暴露的本地 REST 接口，决策只走云端 LLM API（首版走 OpenRouter）。
+不训练任何模型、不读屏幕、不模拟键鼠。游戏状态与动作只走 [STS2MCP](https://github.com/Gennadiyev/STS2MCP) mod 暴露的本地 REST 接口，决策只走云端 LLM API（默认 OpenRouter，也支持 DeepSeek 官方 / OpenAI-compatible endpoint）。
 
 策略知识保存在 `agent_state/`（skill 库 + oracle）并跨 run 累积；每局结束、战斗场景切换时由 sub-agent **自动改写**——**越跑越懂这把游戏，不需要人工写经验**。
 
@@ -11,7 +11,7 @@
 - **Agent state 自动迭代**（核心特色）：`skill_creator`（state_type 切换边界）和 `oracle_updater`（run 结束）两个 sub-agent 自动 read / write / merge `agent_state/skills/*.md` 与 `agent_state/oracle.md`，跨 run 持续累积策略；每局产物 snapshot 到 `runs/<run_id>/agent_state_snapshot/`，方便按时间 diff 看迭代轨迹
 - **三层 memory**：L0（in-context history，state_type 切换清空）+ L1（skill 库，metadata 全注入 + lazy read 全文）+ L2（oracle 全文注入）
 - **端到端 demo loop**：`slay2agent play` 从 main menu 自动驱动到 `game_over`，无需人工干预
-- **OpenRouter LLM 适配**：retry + per-`(role, model)` token 统计
+- **LLM 适配**：默认 OpenRouter，支持 DeepSeek 官方 / OpenAI-compatible endpoint；retry + per-`(role, model)` token 统计
 - **STS2MCP REST 通路**：`GameClient` + 28 个声明式 action schema + state-type gate
 - **紧凑 state 视图**：按 `state_type` 分发渲染，压到 < 700 字符喂 LLM
 - **完整 trace**：`runs/<run_id>/{steps.jsonl, subagent.jsonl, summary.json}` 三件套 + memory 快照
@@ -24,12 +24,12 @@
 |---|---|---|
 | Python **3.11+**（`.python-version` 已钉） | 运行 Agent | 必需 |
 | [`uv`](https://docs.astral.sh/uv/) | 依赖管理 / 运行入口 | 必需 |
-| [OpenRouter](https://openrouter.ai) API key | 云端 LLM 调用（Claude / GPT / Gemini / DeepSeek …） | 跑 `smoke` / `play` 必需 |
+| OpenRouter / DeepSeek / OpenAI-compatible API key | 云端 LLM 调用 | 跑 `smoke` / `play` 必需 |
 | *Slay the Spire 2* 客户端 | 真实游戏运行环境 | 跑 `inspect` / `play` 必需 |
 | [STS2MCP](https://github.com/Gennadiyev/STS2MCP) mod（运行在游戏进程内） | 暴露 game state / action 的本地 REST 服务 | 跑 `inspect` / `play` 必需 |
 | GPU / 本地模型 | — | **不需要**，本项目不做本地推理 |
 
-> Agent 通过 STS2MCP 的本地 REST 端点（`STS2MCP_BASE_URL`）读 state、发 action；LLM 决策走 OpenRouter。两个服务必须分别可达。
+> Agent 通过 STS2MCP 的本地 REST 端点（`STS2MCP_BASE_URL`）读 state、发 action；LLM 决策默认走 OpenRouter，也可用 `LLM_PROVIDER=deepseek` 切到 DeepSeek 官方。两个服务必须分别可达。
 
 ## 快速开始
 
@@ -40,12 +40,12 @@ uv pip install -e ".[dev]"
 
 # 2. 配置密钥
 cp .env.example .env
-# 用编辑器填入 OPENROUTER_API_KEY，按需调 OPENROUTER_MODEL / STS2MCP_BASE_URL
+# 用编辑器填入 LLM_API_KEY，按需调 LLM_PROVIDER / LLM_MODEL / STS2MCP_BASE_URL
 
 # 3. 离线自检（不需要 key / 不需要游戏）
 uv run pytest -q
 
-# 4. LLM 链路冒烟（需要 OPENROUTER_API_KEY）
+# 4. LLM 链路冒烟（需要 LLM_API_KEY）
 uv run slay2agent smoke
 
 # 5. STS2MCP 通路自检（需要游戏 + mod 启动并停在 main menu）
@@ -70,9 +70,11 @@ cp .env.example .env
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `OPENROUTER_API_KEY` | 无 | 必填，`sk-or-v1-...`。 |
-| `OPENROUTER_MODEL` | `xiaomi/mimo-v2-flash` | 任意 OpenRouter slug。`slay2agent play --model <slug>` 可一次性覆盖。 |
-| `OPENROUTER_TIMEOUT` | `120` | 单次 LLM 请求秒数。 |
+| `LLM_API_KEY` | 无 | 必填，使用当前 provider 的 key。 |
+| `LLM_PROVIDER` | `openrouter` | 支持 `openrouter` / `deepseek` / `openai` / `openai_compat`。 |
+| `LLM_BASE_URL` | provider 默认 | OpenRouter 默认 `https://openrouter.ai/api/v1`；DeepSeek 官方默认 `https://api.deepseek.com`。 |
+| `LLM_MODEL` | provider 默认 | OpenRouter 默认 `openai/gpt-4.1-mini`；DeepSeek 默认 `deepseek-v4-pro`。`slay2agent play --model <slug>` 可一次性覆盖。 |
+| `LLM_TIMEOUT` | `120` | 单次 LLM 请求秒数。 |
 | `STS2MCP_BASE_URL` | `http://127.0.0.1:15526` | STS2MCP mod 监听的 base URL（端口对齐上游默认）。 |
 | `STS2MCP_TIMEOUT` | `30` | 单次 REST 请求秒数。 |
 | `AGENT_STATE_DIR` | `agent_state` | skill 库 + oracle 的根目录。 |
@@ -84,7 +86,7 @@ cp .env.example .env
 uv run slay2agent config
 ```
 
-> **安全提示**：key 只放 `.env` 或本地 shell，**不要**写进 tracked 文件、测试或 commit。如不慎泄露，到 OpenRouter 控制台立即 revoke。
+> **安全提示**：key 只放 `.env` 或本地 shell，**不要**写进 tracked 文件、测试或 commit。如不慎泄露，到对应 provider 控制台立即 revoke。
 
 ## CLI
 
@@ -94,7 +96,7 @@ uv run slay2agent config
 uv run slay2agent --help
 
 uv run slay2agent config            # 打印当前配置（密钥 mask）
-uv run slay2agent smoke             # OpenRouter 链路冒烟
+uv run slay2agent smoke             # LLM 链路冒烟
 uv run slay2agent smoke --model anthropic/claude-sonnet-4
 
 uv run slay2agent inspect           # 打印 STS2MCP 当前 game state
@@ -107,7 +109,7 @@ uv run slay2agent play              # 端到端跑一局：main menu → game_ov
 
 | 参数 | 默认 | 说明 |
 |---|---|---|
-| `--model` | `OPENROUTER_MODEL` env / 内置默认 | 本次 run 覆盖所有 agent 角色的模型 slug。 |
+| `--model` | `LLM_MODEL` env / provider 默认 | 本次 run 覆盖所有 agent 角色的模型 slug。 |
 | `--character` | `IRONCLAD` | 角色 id（大写）。 |
 | `--ascension` | `0` | Ascension 等级。 |
 | `--runs-dir` | `runs` | trace 输出目录。 |
@@ -123,7 +125,7 @@ uv run slay2agent play              # 端到端跑一局：main menu → game_ov
 ├── src/slay2agent/
 │   ├── cli.py                # 入口：config / smoke / inspect / play
 │   ├── config.py             # env → dataclass 配置
-│   ├── llm/                  # OpenRouter 适配 + retry + UsageTracker
+│   ├── llm/                  # LLM adapters + retry + UsageTracker
 │   ├── game/                 # STS2MCP client + 28 action schema + 状态解析
 │   ├── memory/               # skill registry + oracle 读取
 │   └── agent/                # 主 loop + tool bridge + skill_creator + oracle_updater + trace
@@ -193,7 +195,7 @@ LLM 链路 / 真实游戏链路必须分别用 `slay2agent smoke` 和 `slay2agen
 
 ## 常见问题
 
-- **`OPENROUTER_API_KEY is not set`**：`.env` 没建，或者建了但变量名拼错。`uv run slay2agent config` 会显示 `api_key = <unset>`。
+- **`LLM_API_KEY is not set`**：`.env` 没建，或者建了但变量名拼错。`uv run slay2agent config` 会显示 `api_key = <unset>`。
 - **`inspect` 报 connect refused**：STS2MCP mod 没启动，或者 `STS2MCP_BASE_URL` 端口对不上。默认 `15526`，与上游 mod 一致。
 - **`play` 启动后没动作**：游戏不在 main menu。`play` 只在 `state_type == "menu"` 时自动走开局导航，否则直接把当前局交给 agent。
 - **`play` 跑了一半被 loop detector 终止**：窗口内同一个 `(action, args)` 重复了 `--repeat-threshold` 次（默认 6 次/12 步）。如果策略性重复（如多回合同 attack）被误杀，调大 `--repeat-threshold`；如果 agent 真的卡死，看 `runs/<run_id>/summary.json` 里的 `loop_detail` 复盘。

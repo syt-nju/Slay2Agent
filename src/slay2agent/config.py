@@ -9,19 +9,42 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from dotenv import load_dotenv
 
+LLMProvider = Literal["openai_compat", "openrouter", "openai", "deepseek"]
+
+DEFAULT_LLM_PROVIDER: LLMProvider = "openrouter"
 DEFAULT_LLM_MODEL = "openai/gpt-4.1-mini"
 DEFAULT_LLM_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_OPENAI_LLM_MODEL = "gpt-4.1-mini"
+DEFAULT_OPENAI_LLM_BASE_URL = "https://api.openai.com/v1"
+DEFAULT_DEEPSEEK_LLM_MODEL = "deepseek-v4-pro"
+DEFAULT_DEEPSEEK_LLM_BASE_URL = "https://api.deepseek.com"
+
+_PROVIDER_DEFAULTS: dict[LLMProvider, tuple[str, str]] = {
+    "openai_compat": (DEFAULT_LLM_MODEL, DEFAULT_LLM_BASE_URL),
+    "openrouter": (DEFAULT_LLM_MODEL, DEFAULT_LLM_BASE_URL),
+    "openai": (DEFAULT_OPENAI_LLM_MODEL, DEFAULT_OPENAI_LLM_BASE_URL),
+    "deepseek": (DEFAULT_DEEPSEEK_LLM_MODEL, DEFAULT_DEEPSEEK_LLM_BASE_URL),
+}
+
+
+def _llm_provider_from_env(raw: str | None) -> LLMProvider:
+    provider = (raw or DEFAULT_LLM_PROVIDER).strip().lower()
+    if provider not in _PROVIDER_DEFAULTS:
+        valid = ", ".join(_PROVIDER_DEFAULTS)
+        raise RuntimeError(f"Unsupported LLM_PROVIDER={provider!r}. Expected one of: {valid}.")
+    return provider  # type: ignore[return-value]
 
 
 @dataclass(frozen=True)
 class LLMConfig:
-    model: str = DEFAULT_LLM_MODEL
+    provider: LLMProvider = DEFAULT_LLM_PROVIDER
+    model: str = ""
     api_key: str | None = None
-    base_url: str = DEFAULT_LLM_BASE_URL
+    base_url: str = ""
     timeout: float = 120.0
     thinking_budget: int | None = None
     """Token budget for the **main** agent's reasoning chain.
@@ -43,15 +66,27 @@ class LLMConfig:
     ``None`` = not sent (provider default).
     """
 
+    def __post_init__(self) -> None:
+        provider = _llm_provider_from_env(self.provider)
+        default_model, default_base_url = _PROVIDER_DEFAULTS[provider]
+        object.__setattr__(self, "provider", provider)
+        if not self.model:
+            object.__setattr__(self, "model", default_model)
+        if not self.base_url:
+            object.__setattr__(self, "base_url", default_base_url)
+
     @classmethod
     def from_env(cls) -> "LLMConfig":
+        provider = _llm_provider_from_env(os.getenv("LLM_PROVIDER"))
+        default_model, default_base_url = _PROVIDER_DEFAULTS[provider]
         budget_raw = os.getenv("LLM_THINKING_BUDGET")
         subagent_budget_raw = os.getenv("LLM_SUBAGENT_THINKING_BUDGET")
         thinking_raw = os.getenv("LLM_ENABLE_THINKING")
         return cls(
-            model=os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL),
+            provider=provider,
+            model=os.getenv("LLM_MODEL") or default_model,
             api_key=os.getenv("LLM_API_KEY"),
-            base_url=os.getenv("LLM_BASE_URL", DEFAULT_LLM_BASE_URL),
+            base_url=os.getenv("LLM_BASE_URL") or default_base_url,
             timeout=float(os.getenv("LLM_TIMEOUT", "120")),
             thinking_budget=int(budget_raw) if budget_raw else None,
             subagent_thinking_budget=int(subagent_budget_raw) if subagent_budget_raw else None,
@@ -70,6 +105,8 @@ class LLMConfig:
     @property
     def extra_body(self) -> dict[str, Any] | None:
         """extra_body for the main agent."""
+        if self.provider == "deepseek":
+            return self._deepseek_extra_body()
         d: dict[str, Any] = {}
         if self.enable_thinking is not None:
             d["enable_thinking"] = self.enable_thinking
@@ -84,6 +121,8 @@ class LLMConfig:
         Uses ``subagent_thinking_budget`` when set, otherwise falls back to
         ``thinking_budget``.  ``enable_thinking`` applies to both agents.
         """
+        if self.provider == "deepseek":
+            return self._deepseek_extra_body()
         budget = (
             self.subagent_thinking_budget
             if self.subagent_thinking_budget is not None
@@ -95,6 +134,12 @@ class LLMConfig:
         if budget is not None:
             d["thinking_budget"] = budget
         return d or None
+
+    def _deepseek_extra_body(self) -> dict[str, Any] | None:
+        if self.enable_thinking is None:
+            return None
+        thinking_type = "enabled" if self.enable_thinking else "disabled"
+        return {"thinking": {"type": thinking_type}}
 
 
 DEFAULT_STS2MCP_BASE_URL = "http://127.0.0.1:15526"

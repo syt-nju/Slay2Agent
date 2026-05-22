@@ -46,7 +46,7 @@ from slay2agent.agent.trace import (
 from slay2agent.config import Config
 from slay2agent.game.client import ActionError, GameClient
 from slay2agent.game.schema import CombatView, UnknownView, parse, to_compact_prompt
-from slay2agent.llm.openai_compat import OpenAICompatibleAdapter
+from slay2agent.llm.factory import build_llm_adapter
 from slay2agent.llm.protocol import AgentRole, LLMAdapter, Message, ToolCall
 from slay2agent.llm.retry import call_with_retry
 from slay2agent.llm.usage import UsageTracker
@@ -207,10 +207,7 @@ async def run_demo_loop(
     run_dir = run_cfg.runs_dir / run_id
     trace = TraceWriter(run_dir)
 
-    api_key = cfg.llm.require_api_key()
-    adapter = OpenAICompatibleAdapter(
-        cfg.llm.model, api_key, cfg.llm.base_url, timeout=cfg.llm.timeout
-    )
+    adapter = build_llm_adapter(cfg.llm)
     loop_detector = LoopDetector(
         window_size=run_cfg.window_size,
         repeat_threshold=run_cfg.repeat_threshold,

@@ -29,7 +29,9 @@ def _mask(secret: str | None) -> str:
 def _cmd_config(args: argparse.Namespace) -> int:
     cfg = Config.load()
     print("LLM:")
+    print(f"  provider = {cfg.llm.provider}")
     print(f"  model    = {cfg.llm.model}")
+    print(f"  base_url = {cfg.llm.base_url}")
     print(f"  api_key  = {_mask(cfg.llm.api_key)}")
     print(f"  timeout  = {cfg.llm.timeout}")
     print("Game (STS2MCP):")

@@ -9,6 +9,7 @@ from slay2agent.cli import _mask, build_parser, main
 def _isolated_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in (
         "LLM_API_KEY",
+        "LLM_PROVIDER",
         "LLM_MODEL",
         "LLM_TIMEOUT",
         "LLM_BASE_URL",
@@ -56,6 +57,8 @@ def test_config_subcommand_prints_masked_values(
     assert rc == 0
     assert "sk-or-1234567890abcdef" not in out
     assert "127.0.0.1:15526" in out  # default STS2MCP base url
+    assert "provider" in out
+    assert "base_url" in out
     assert "model" in out
 
 

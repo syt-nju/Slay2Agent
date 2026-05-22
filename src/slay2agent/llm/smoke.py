@@ -1,30 +1,27 @@
 """Live smoke test against any OpenAI-compatible LLM endpoint.
 
 Usage:
-    LLM_API_KEY=sk-... python -m slay2agent.llm.smoke
-    LLM_API_KEY=sk-... LLM_BASE_URL=https://openrouter.ai/api/v1 python -m slay2agent.llm.smoke --model=openai/gpt-4.1-mini
+    LLM_API_KEY=sk-... uv run python -m slay2agent.llm.smoke
+    LLM_PROVIDER=deepseek LLM_API_KEY=sk-... uv run python -m slay2agent.llm.smoke
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
-import os
 import sys
 
 from dotenv import load_dotenv
 
+from slay2agent.config import Config
 from slay2agent.llm import (
     LLMAdapter,
     Message,
-    OpenAICompatibleAdapter,
     ToolSchema,
     UsageTracker,
+    build_llm_adapter,
     call_with_retry,
 )
-
-DEFAULT_MODEL = "openai/gpt-4.1-mini"
-DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 
 _ECHO_SCHEMA = ToolSchema(
     name="echo",
@@ -103,16 +100,19 @@ def main() -> int:
     )
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default=os.getenv("LLM_MODEL", DEFAULT_MODEL))
+    cfg = Config.load(dotenv=False)
+    parser.add_argument("--model", default=cfg.llm.model)
     args = parser.parse_args()
 
-    api_key = os.getenv("LLM_API_KEY")
-    if not api_key:
+    if not cfg.llm.api_key:
         print("LLM_API_KEY not set", file=sys.stderr)
         return 2
 
-    base_url = os.getenv("LLM_BASE_URL", DEFAULT_BASE_URL)
-    adapter = OpenAICompatibleAdapter(model=args.model, api_key=api_key, base_url=base_url)
+    if args.model != cfg.llm.model:
+        import dataclasses
+
+        cfg = dataclasses.replace(cfg, llm=dataclasses.replace(cfg.llm, model=args.model))
+    adapter = build_llm_adapter(cfg.llm)
     tracker = UsageTracker()
 
     results = [
