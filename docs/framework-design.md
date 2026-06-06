@@ -11,13 +11,13 @@ slay2agent 是 train-free 的研究型 Agent。它不读取画面、不模拟键
 ## Layers
 
 ```text
+Offline Skill Maintenance (CLI: analyze / distill)  ← 离线,按完整轨迹维护 skill 库 (F-013)
 Live Context Viewer (--live, browser SSE)  ← optional, observer 模式挂载
 Memory Iteration Log (docs/memory-iteration-log.md)
 Trace (runs/<run_id>/)
 Main Agent Loop  ──┐
-Skill Creator     ─┤   ← 三类 agent 共用 Sub-agent Runner
-Oracle Updater    ─┘
-Memory Layer (skills/ + oracle.md)
+Oracle Updater    ─┘   ← run 末触发, 与主 agent 共用 Sub-agent Runner
+Memory Layer (skills/ + oracle.md)   ← 推理期只读
 Tool Bridge (gate + loop detector)
 LLM Adapter (provider-agnostic, role-aware token accounting)
 State Parser (state_type → compact view)
@@ -48,7 +48,7 @@ Game HTTP Client (STS2MCP REST)
 
 **配置:** `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` / `LLM_TIMEOUT`（`config.py` 从 env 读取）。`LLMAdapter` ABC 是唯一允许在 `llm/` 包外引用的类型；具体 adapter 类不出现在 agent 层。
 
-usage 按 `(agent_role, model)` 分桶记录 input/output token。`agent_role: Literal["main","skill_creator","oracle_updater"]` 是上层语义,**adapter 不感知** —— orchestrator / sub-agent runner 拿到 `LLMResponse` 后调 `tracker.record(role, resp.model, resp.usage)`。这一拆分是 trace 与 run summary 报告"三类 agent 各自 token"的硬基础。
+usage 按 `(agent_role, model)` 分桶记录 input/output token。`agent_role`(如 `main` / `oracle_updater` / `compactor`,以及 F-013 离线流水线的 `failure_analyzer` / `distiller_*`)是上层语义,**adapter 不感知** —— orchestrator / sub-agent runner / CLI 拿到 `LLMResponse` 后调 `tracker.record(role, resp.model, resp.usage)`。这一拆分是 trace 与 run summary 报告"各 agent 角色各自 token"的硬基础。
 
 ### Tool Bridge
 
@@ -65,7 +65,7 @@ LLM 不直接调用 game action,统一经过 bridge:
 三层结构,职责互不重叠:
 
 - **L0 in-context history**:主 agent 单次小关(同一 `state_type` 段落)内的对话历史。`state_type` 切换边界处显式清空。
-- **L1 skill 库**:文件形式的策略片段。每个 skill 含极简 metadata(≤ 几十 token)+ body。所有 metadata 在每步主 agent 调用时强制注入 system prompt;body 由主 agent 通过 `read_skill` 主动获取。
+- **L1 skill 库**:文件形式的策略片段。每个 skill 含极简 metadata(≤ 几十 token)+ body。所有 `description` 在每步主 agent 调用时强制注入 system prompt;body 由主 agent 通过 `read_skill` 主动获取。**推理期只读** —— skill 的创建/改进/去重全部由离线 CLI 流水线(F-013)按完整轨迹完成,play 过程不写 skill 库。
 - **L2 `oracle.md`**:全局元策略文档。每次主 agent 调用强插入 system prompt。run 边界由 oracle updater 重写。软上限默认 4k tokens。
 
 存放路径(惯例):
@@ -73,39 +73,41 @@ LLM 不直接调用 game action,统一经过 bridge:
 ```text
 agent_state/
   skills/
-    <skill_id>.md       # mainstream SKILL.md 格式：name + description frontmatter + markdown body
+    <skill_id>.md       # failure_reason + description frontmatter + markdown body
   oracle.md
 ```
 
-Skill 文件格式对齐 Claude Code / Cursor `.cursor/skills/*/SKILL.md` 约定：
+Skill 文件格式(严格 template,frontmatter 在 mainstream SKILL.md 基础上加 `failure_reason`)：
 
 ```markdown
 ---
 name: <人类可读显示名>
-description: <一两句话，同时说明"做什么"和"何时使用"，主 agent 只凭此字段决定是否 read_skill>
+failure_reason: <这条 skill 针对的失败原因，简短；仅供 F-013 蒸馏时比对去重，不注入 play-time prompt>
+description: <一两句话，同时说明"做什么"和"何时使用"，play 时主 agent 只凭此字段决定是否 read_skill>
 ---
 
 # <Name>
 
-<完整 markdown 正文，read_skill 才会加载>
+<具体细节：可操作的策略，read_skill 才会加载>
 ```
 
-`description` 是唯一的触发信号，必须自带"use when ..."一类的触发条件，主 agent 看不到额外的 `when_to_read` 字段。
+- `description` 是 **play 时唯一的触发信号**，必须自带"use when ..."触发条件。
+- `failure_reason` 只在 F-013 阶段2 创建/改进 skill 时被读取用于去重判断，**不出现在 play-time system prompt**。
 
 `agent_state/` 由用户通过 git 管理(commit / branch / rollback);代码侧不实现 snapshot 切换。
 
 ### Sub-agent Runner
 
-Skill creator 与 oracle updater 都是 sub-agent。它们和主 agent **共用底层基础设施**:LLM adapter、tool dispatch、token tracker、trace writer、错误处理。这是硬约束(见 invariants),不允许各写各的。
+Oracle updater(run 末)与离线 skill 维护流水线(F-013 的 analyze / distill)都复用主 agent 的**底层基础设施**:LLM adapter、tool dispatch、token tracker、错误处理。这是硬约束(见 invariants),不允许各写各的。
 
 差别只在:
 
 - prompt 模板
-- 工具集(主 agent 仅 read 类;skill creator 含 read + write + delete skill;oracle updater 不暴露文件 IO,直接由 runner 接收返回内容写盘)
-- 触发时机
+- 工具集(主 agent 仅 read 类;oracle updater 不暴露文件 IO,直接由 runner 接收返回内容写盘;distill 含 read + write + delete skill)
+- 触发时机(oracle updater = run 末;analyze / distill = 用户手动跑 CLI)
 - 输入装配方式
 
-首版 skill creator 与主 agent **同步阻塞**:主 agent 等 sub-agent 返回后再继续。后续根据延迟数据决定是否改为限时异步。
+> **v3 移除**:旧 `skill_creator`(`state_type` 边界触发)与 `skill_librarian`(run 末去重)已删除。skill 维护不再发生在推理期,改由 F-013 离线流水线按完整轨迹完成。
 
 ### Main Agent Loop
 
@@ -113,28 +115,54 @@ Skill creator 与 oracle updater 都是 sub-agent。它们和主 agent **共用�
 loop:
     state = get_state()
     if state_type 与上一步不同 and 上一段非空:
-        flush L0
-        run skill_creator(prev_segment_trace)   # 同步,失败不阻断
-    inject (skill metadata list, oracle.md) into system prompt
+        flush L0                                  # 仅清 L0,不再触发任何 skill 维护
+    inject (all skill descriptions, oracle.md) into system prompt   # skill 库只读
     main_agent.decide(compact_view(state)) -> tool call
     tool_bridge.gate -> post_action_and_settle
-    write trace step
+    write trace step (含 action_feedback)
     if loop_detector triggers OR state == game_over:
         run oracle_updater(full_run_trace)
         break
 ```
 
-死循环终止与正常 `game_over` 对 oracle updater 来说一视同仁,都触发 run 结束流程。trace 中标记终止原因。
+推理期对 skill 库**零写入**;skill 的维护离线进行(见下方 Offline Skill Maintenance)。死循环终止与正常 `game_over` 对 oracle updater 来说一视同仁,都触发 run 结束流程。trace 中标记终止原因。
+
+### Offline Skill Maintenance (F-013)
+
+skill 库由两条**手动触发的 CLI 命令**离线维护,基于完整轨迹而非推理期片段:
+
+```text
+slay2agent analyze   # 阶段1：失败分析
+  for run in runs/ where not exists failure_report.json:
+      transcript = deterministic_reconstruct(run/steps.jsonl)
+      report = LLM(role=failure_analyzer).analyze(transcript)   # 不纠结输赢,逐条复盘
+      write run/failure_report.json   # 失败原因 + 轨迹片段(step 区间 + 摘录)
+
+slay2agent distill   # 阶段2：skill 蒸馏(两个 context 隔离的子步骤)
+  reports = [r for r in all failure_report.json if r.distilled_at is None]
+  clusters = LLM(role=distiller_cluster).cluster(reports.failure_reasons)   # 2a：只看失败原因
+  for cluster in clusters:                                                  # 2b：每组独立 context
+      ctx = cluster + evidence + existing_skills(failure_reason, description)
+      LLM(role=distiller_write, tools=[read_skill, write_skill, delete_skill]).decide(ctx)
+          -> 新建 skill 或 整文件覆盖改进已有 skill
+  mark reports.distilled_at
+```
+
+**轨迹重建 `deterministic_reconstruct`**:固定代码逻辑,逐 step 读 `steps.jsonl` 顶层字段
+(`state_type` / `tool_name` / `tool_args` / `action_feedback` / `settled_state_summary`),
+投影成"动作 → 反馈 → 结果状态"序列。不调 LLM、不重解析游戏 JSON、不读 `llm_request_messages`,
+因而免疫 L0 compaction。`failure_report.json` 存在 = 已分析;报告含 `distilled_at` = 已蒸馏;两者都用文件状态做幂等去重。
 
 ### Trace and Token Accounting
 
 `runs/<run_id>/`:
 
-- `steps.jsonl`:主 agent 每步一行
-- `subagent.jsonl`:skill creator / oracle updater 每次触发一行
-- `summary.json`:终止原因 + 三类 agent 各自 input/output token 总量、调用次数
+- `steps.jsonl`:主 agent 每步一行(含 `action_feedback` = 被执行动作的原始返回/报错串,使每步自描述,供 F-013 离线重建)
+- `subagent.jsonl`:oracle updater 每次触发一行
+- `summary.json`:终止原因 + 各 agent 角色各自 input/output token 总量、调用次数
+- `failure_report.json`:F-013 阶段1 产出(存在 = 已分析;含 `distilled_at` = 已被阶段2 蒸馏)
 
-trace 是后续 memory 设计迭代的研究素材;summary 用于在 `docs/memory-iteration-log.md` 中归档。
+trace 是后续 memory 设计迭代的研究素材,也是 F-013 离线 skill 维护的唯一输入;summary 用于在 `docs/memory-iteration-log.md` 中归档。
 
 ### Live Context Viewer
 
@@ -174,14 +202,13 @@ on_usage_snapshot(tracker_snapshot)    # 定时由 viewer 侧拉取
 
 ```text
 get_state
-  -> 检测 state_type 切换
-       (清空 L0; 触发 skill_creator)
+  -> 检测 state_type 切换 (仅清空 L0; 不触发任何 skill 维护)
   -> parse compact view
-  -> assemble system prompt: oracle.md + skill metadata
+  -> assemble system prompt: oracle.md + 全部 skill description (只读)
   -> main agent decide (LLM call, role=main)
   -> tool bridge gate
   -> post_action_and_settle
-  -> write trace step
+  -> write trace step (含 action_feedback)
   -> loop or terminate
 
 run termination
@@ -189,11 +216,12 @@ run termination
   -> rewrite oracle.md
   -> write run summary
 
-每次 state_type 切换 (含中间)
-  -> run skill_creator (LLM call, role=skill_creator)
-  -> 强制 list/read 匹配相似 skill
-  -> 0 或多次 write/delete skill
-  -> 写 subagent trace
+离线 (F-013, 用户手动跑 CLI, 与 play 解耦)
+  analyze:  逐条未分析 run -> 确定性重建轨迹 -> LLM 失败分析 -> 写 failure_report.json
+  distill:  取未蒸馏报告
+            -> 2a 聚类共性失败原因 (context 仅含失败原因)
+            -> 2b 每组独立 context: 对照现有 skill 判定 新建/覆盖改进 -> write/delete skill
+            -> 回写 distilled_at
 ```
 
 ## Invariants
@@ -203,9 +231,10 @@ run termination
 - 所有 LLM 调用经过 adapter,且必须传入 `agent_role` 标记。
 - 所有 LLM action 调用经过 tool bridge。
 - L0 in-context 在 `state_type` 切换时必须清空。
-- 主 agent 不能 write 任何 memory 文件(只 read)。
-- skill creator 不能修改 `oracle.md`;oracle updater 不能修改 skill 库。
-- 三类 agent 共用一份 LLM adapter / tool dispatch / token tracker / trace writer 实现,不允许重复实现。
+- 主 agent 不能 write 任何 memory 文件(只 read);**推理期(play)对 skill 库零写入**,skill 维护只发生在离线 CLI 流水线(F-013)。
+- F-013 distill 不能修改 `oracle.md`;oracle updater 不能修改 skill 库。
+- F-013 的轨迹重建必须是**确定性固定代码逻辑**(不调 LLM、不重解析游戏 JSON、不依赖 `llm_request_messages`)。
+- 各 agent 角色共用一份 LLM adapter / tool dispatch / token tracker / trace writer 实现,不允许重复实现。
 - 死循环检测的处理是 *直接终止 run*,不做 recovery。
 - `except` 必须配合 `logger.error(...)`,不允许静默吞掉异常。
 - 任何 memory 设计变更必须在 `docs/memory-iteration-log.md` 留下 entry。
@@ -227,13 +256,12 @@ run termination
 
 ## Deferred Decisions
 
-- skill metadata 是否需要在 `name` + `description` 之外再加结构化字段（`examples` / `tags` / `applicable_state_types` 等）—— v1 起已对齐 mainstream，只保留 `name` + `description`，`description` 自带 "use when ..." 触发条件。
+- skill metadata 是否需要在 `name` + `failure_reason` + `description` 之外再加结构化字段（`examples` / `tags` / `applicable_state_types` 等）—— 暂不加，`description` 自带 "use when ..." 触发条件。
 - skill body 是否需要长度上限。
-- skill creator 是否限制每小关最多写 N 个 skill。
+- (F-013) 阶段2a "高频/相似" 完全交 LLM 判断是否稳定，必要时再引入显式批大小或频次阈值。
 - `oracle.md` 4k tokens 软上限是否合适。
 - 是否引入第二个 LLM provider。**→ F-010 已实现为 OpenAI-compatible 通用适配层，不再 deferred。**
 - loop_detector 的 `window_size=10` / `repeat_threshold=4` 默认是否合适。
 - 是否允许主 agent 在 prompt 里以 "thought" 段方式 reason 后再 tool call。
-- skill creator 是否改为限时异步(首版同步阻塞)。
 - 暂未收集 fixture 的 `state_type`(`rest_site` / `shop` / `fake_merchant` / `treasure` / `bundle_select` / `relic_select` / `crystal_sphere` / `boss`)是否要在 F-004 内补齐专用 view —— 首版统一走 `UnknownView` fallback,等 demo loop 跑出真实样本后再补。
 

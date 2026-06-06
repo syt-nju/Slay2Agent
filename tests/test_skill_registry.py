@@ -84,6 +84,32 @@ def test_load_skill_file_empty_frontmatter_fields(tmp_path):
     assert skill.body == "body here"
 
 
+def test_load_skill_file_parses_failure_reason(tmp_path):
+    """F-013: failure_reason frontmatter field is parsed when present."""
+    content = (
+        "---\n"
+        "name: Block First\n"
+        "failure_reason: Attacks before blocking and dies to multi-hit enemies.\n"
+        "description: Defensive sequencing. Use in elite fights.\n"
+        "---\n\n"
+        "# Block First\nPlay defend before strike vs multi-hit.\n"
+    )
+    p = tmp_path / "block_first.md"
+    p.write_text(content, encoding="utf-8")
+    skill = _load_skill_file(p)
+    assert skill is not None
+    assert skill.failure_reason == "Attacks before blocking and dies to multi-hit enemies."
+    assert skill.description == "Defensive sequencing. Use in elite fights."
+
+
+def test_load_skill_file_missing_failure_reason_defaults_blank(tmp_path):
+    """Skills authored before F-013 (no failure_reason) still parse."""
+    p = make_skill_file(tmp_path, "old", "Old", "Legacy skill. Use always.", "# Old\nbody")
+    skill = _load_skill_file(p)
+    assert skill is not None
+    assert skill.failure_reason == ""
+
+
 def test_load_skill_file_multiline_description(tmp_path):
     """Long description split across indented continuation lines is joined."""
     content = (
@@ -167,6 +193,43 @@ def test_registry_metadata_lines_format(tmp_path):
     assert "[s1]" in lines[0]
     assert "Skill One" in lines[0]
     assert "Do X. Use when X happens." in lines[0]
+
+
+def test_registry_metadata_lines_exclude_failure_reason(tmp_path):
+    """F-013: failure_reason is for offline distill only — never injected at play time."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    reg = SkillRegistry(skills_dir)
+    reg.write_skill(
+        skill_id="s1",
+        name="Skill One",
+        description="Do X. Use when X happens.",
+        body="body",
+        failure_reason="SECRET_FAILURE_MARKER overcommits energy",
+    )
+    reg.reload()
+    lines = reg.metadata_lines()
+    assert "Do X. Use when X happens." in lines[0]
+    assert "SECRET_FAILURE_MARKER" not in lines[0]
+
+
+def test_registry_write_skill_roundtrips_failure_reason(tmp_path):
+    """write_skill persists failure_reason; read_skill recovers it."""
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    reg = SkillRegistry(skills_dir)
+    reg.write_skill(
+        skill_id="combat",
+        name="Combat",
+        description="Combat tips. Use in combat.",
+        body="# Combat\nblock first",
+        failure_reason="Dies to AoE by not blocking.",
+    )
+    reg.reload()
+    skill = reg.read_skill("combat")
+    assert skill is not None
+    assert skill.failure_reason == "Dies to AoE by not blocking."
+    assert "block first" in skill.body
 
 
 def test_registry_caches_on_repeated_calls(tmp_path):

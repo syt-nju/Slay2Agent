@@ -249,9 +249,9 @@ header .status.disconnected { color: var(--accent); }
         <div class="usage-cell"><span class="label">main in</span><span class="value" id="u-main-in">0</span></div>
         <div class="usage-cell"><span class="label">main out</span><span class="value" id="u-main-out">0</span></div>
         <div class="usage-cell"><span class="label">main total</span><span class="value" id="u-main-total">0</span></div>
-        <div class="usage-cell"><span class="label">skill in</span><span class="value" id="u-sc-in">0</span></div>
-        <div class="usage-cell"><span class="label">skill out</span><span class="value" id="u-sc-out">0</span></div>
-        <div class="usage-cell"><span class="label">skill total</span><span class="value" id="u-sc-total">0</span></div>
+        <div class="usage-cell"><span class="label">compactor in</span><span class="value" id="u-cp-in">0</span></div>
+        <div class="usage-cell"><span class="label">compactor out</span><span class="value" id="u-cp-out">0</span></div>
+        <div class="usage-cell"><span class="label">compactor total</span><span class="value" id="u-cp-total">0</span></div>
         <div class="usage-cell"><span class="label">oracle in</span><span class="value" id="u-ou-in">0</span></div>
         <div class="usage-cell"><span class="label">oracle out</span><span class="value" id="u-ou-out">0</span></div>
         <div class="usage-cell"><span class="label">oracle total</span><span class="value" id="u-ou-total">0</span></div>
@@ -346,7 +346,7 @@ function updateUsage(snapshot) {
     document.getElementById(prefix + '-total').textContent = fmt(inp + out);
   }
   set('main', 'u-main');
-  set('skill_creator', 'u-sc');
+  set('compactor', 'u-cp');
   set('oracle_updater', 'u-ou');
 }
 

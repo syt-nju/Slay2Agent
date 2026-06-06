@@ -11,7 +11,7 @@ def test_record_buckets_by_role_and_model():
     t.record("main", "openai/gpt-4o-mini", Usage(input_tokens=10, output_tokens=3))
     t.record("main", "openai/gpt-4o-mini", Usage(input_tokens=5, output_tokens=7))
     t.record(
-        "skill_creator",
+        "compactor",
         "openai/gpt-4o-mini",
         Usage(input_tokens=4, output_tokens=2),
     )
@@ -27,7 +27,7 @@ def test_record_buckets_by_role_and_model():
         "output": 10,
         "total": 25,
     }
-    assert snap["skill_creator"]["openai/gpt-4o-mini"] == {
+    assert snap["compactor"]["openai/gpt-4o-mini"] == {
         "input": 4,
         "output": 2,
         "total": 6,
@@ -42,26 +42,26 @@ def test_record_buckets_by_role_and_model():
 def test_same_model_different_roles_stay_separate():
     t = UsageTracker()
     t.record("main", "m1", Usage(input_tokens=10, output_tokens=1))
-    t.record("skill_creator", "m1", Usage(input_tokens=3, output_tokens=2))
+    t.record("compactor", "m1", Usage(input_tokens=3, output_tokens=2))
 
     snap = t.snapshot()
     assert snap["main"]["m1"]["total"] == 11
-    assert snap["skill_creator"]["m1"]["total"] == 5
-    assert "skill_creator" not in snap["main"]
-    assert "main" not in snap["skill_creator"]
+    assert snap["compactor"]["m1"]["total"] == 5
+    assert "compactor" not in snap["main"]
+    assert "main" not in snap["compactor"]
 
 
 def test_role_totals_aggregates_across_models_per_role():
     t = UsageTracker()
     t.record("main", "m1", Usage(input_tokens=10, output_tokens=2))
     t.record("main", "m2", Usage(input_tokens=5, output_tokens=1))
-    t.record("skill_creator", "m1", Usage(input_tokens=3, output_tokens=4))
+    t.record("compactor", "m1", Usage(input_tokens=3, output_tokens=4))
 
     totals = t.role_totals()
     assert totals["main"].input_tokens == 15
     assert totals["main"].output_tokens == 3
-    assert totals["skill_creator"].input_tokens == 3
-    assert totals["skill_creator"].output_tokens == 4
+    assert totals["compactor"].input_tokens == 3
+    assert totals["compactor"].output_tokens == 4
     assert "oracle_updater" not in totals
 
 

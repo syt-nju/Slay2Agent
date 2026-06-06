@@ -53,7 +53,7 @@ class LLMConfig:
     Set via ``LLM_THINKING_BUDGET`` env var.
     """
     subagent_thinking_budget: int | None = None
-    """Token budget for **sub-agent** (skill_creator / oracle_updater) reasoning.
+    """Token budget for **sub-agent** (oracle_updater / compactor) reasoning.
 
     Falls back to ``thinking_budget`` when ``None``.
     Set via ``LLM_SUBAGENT_THINKING_BUDGET`` env var.
@@ -116,7 +116,7 @@ class LLMConfig:
 
     @property
     def subagent_extra_body(self) -> dict[str, Any] | None:
-        """extra_body for skill_creator / oracle_updater.
+        """extra_body for sub-agents (oracle_updater / compactor / F-013 pipeline).
 
         Uses ``subagent_thinking_budget`` when set, otherwise falls back to
         ``thinking_budget``.  ``enable_thinking`` applies to both agents.
@@ -183,6 +183,8 @@ class MemoryConfig:
     l0_compact_enabled: bool = True
     l0_compact_threshold: int = 30
     l0_compact_keep: int = 6
+    maintenance_min_steps: int = 10
+    """Minimum ``steps.jsonl`` length for F-013 analyze/distill eligibility."""
 
     @classmethod
     def from_env(cls) -> "MemoryConfig":
@@ -197,15 +199,12 @@ class MemoryConfig:
             ),
             l0_compact_threshold=int(os.getenv("L0_COMPACT_THRESHOLD", "30")),
             l0_compact_keep=int(os.getenv("L0_COMPACT_KEEP", "6")),
+            maintenance_min_steps=int(os.getenv("MAINTENANCE_MIN_STEPS", "10")),
         )
 
     @property
     def skills_dir(self) -> Path:
         return self.agent_state_dir / "skills"
-
-    @property
-    def skill_cache_path(self) -> Path:
-        return self.agent_state_dir / "skill_cache.json"
 
     @property
     def oracle_path(self) -> Path:

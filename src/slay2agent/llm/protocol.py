@@ -14,7 +14,15 @@ Role = Literal["system", "user", "assistant", "tool"]
 StopReason = Literal["stop", "tool_calls", "length", "error"]
 ToolChoice = Literal["auto", "required", "none"]
 
-AgentRole = Literal["main", "skill_creator", "oracle_updater", "compactor"]
+AgentRole = Literal[
+    "main",
+    "oracle_updater",
+    "compactor",
+    # F-013 offline skill maintenance roles.
+    "failure_analyzer",
+    "distiller_cluster",
+    "distiller",
+]
 """Identifies which agent made an LLM call.
 
 Used by ``UsageTracker`` to bucket tokens by ``(agent_role, model)`` so that

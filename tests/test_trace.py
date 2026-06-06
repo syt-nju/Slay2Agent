@@ -91,19 +91,33 @@ def test_write_step_appends_multiple() -> None:
         assert json.loads(lines[2])["step"] == 2
 
 
+def test_step_action_feedback_defaults_none_and_serialises() -> None:
+    """F-013: action_feedback defaults to None and round-trips when set."""
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = Path(tmp) / "run"
+        tw = TraceWriter(run_dir)
+        tw.write_step(_make_step(0))  # default
+        err_step = _make_step(1)
+        err_step.action_feedback = "ERROR: action 'play_card' rejected: not in play phase"
+        tw.write_step(err_step)
+        lines = (run_dir / "steps.jsonl").read_text().strip().splitlines()
+        assert json.loads(lines[0])["action_feedback"] is None
+        assert "not in play phase" in json.loads(lines[1])["action_feedback"]
+
+
 # ── TraceWriter: write_subagent ────────────────────────────────────────────
 
 
 def _make_subagent_record() -> SubagentRecord:
     return SubagentRecord(
-        agent_role="skill_creator",
+        agent_role="oracle_updater",
         timestamp="2026-05-10T14:24:00",
-        trigger_reason="state_type_transition",
-        input_summary="left combat",
+        trigger_reason="run_end",
+        input_summary="game_over",
         llm_request_messages=[],
         llm_response_message={},
         llm_usage={"input_tokens": 20, "output_tokens": 10},
-        file_diff_summary="created skill ironclad_combat.md",
+        file_diff_summary="rewrote oracle.md",
     )
 
 
@@ -115,8 +129,8 @@ def test_write_subagent_creates_subagent_jsonl() -> None:
         sub_file = run_dir / "subagent.jsonl"
         assert sub_file.exists()
         record = json.loads(sub_file.read_text().strip())
-        assert record["agent_role"] == "skill_creator"
-        assert record["file_diff_summary"] == "created skill ironclad_combat.md"
+        assert record["agent_role"] == "oracle_updater"
+        assert record["file_diff_summary"] == "rewrote oracle.md"
 
 
 # ── TraceWriter: write_summary ─────────────────────────────────────────────
@@ -139,7 +153,7 @@ def test_summary_has_all_three_roles(reason: TerminationReason) -> None:
         summary = json.loads((run_dir / "summary.json").read_text())
         assert summary["termination_reason"] == reason
         tokens = summary["tokens"]
-        for role in ("main", "skill_creator", "oracle_updater"):
+        for role in ("main", "oracle_updater", "compactor"):
             assert role in tokens, f"role {role!r} missing from tokens"
             assert "input_tokens" in tokens[role]
             assert "output_tokens" in tokens[role]
@@ -154,9 +168,9 @@ def test_summary_unused_roles_have_zero_tokens() -> None:
         tw.write_summary(termination_reason="game_over", tracker=tracker)
         summary = json.loads((run_dir / "summary.json").read_text())
         tokens = summary["tokens"]
-        assert tokens["skill_creator"]["input_tokens"] == 0
-        assert tokens["skill_creator"]["output_tokens"] == 0
-        assert tokens["skill_creator"]["calls"] == 0
+        assert tokens["compactor"]["input_tokens"] == 0
+        assert tokens["compactor"]["output_tokens"] == 0
+        assert tokens["compactor"]["calls"] == 0
         assert tokens["oracle_updater"]["calls"] == 0
 
 

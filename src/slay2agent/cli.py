@@ -4,6 +4,8 @@ Subcommands:
     smoke    Run the live LLM smoke test (F-002).
     inspect  Print current STS2MCP state via the game REST client (F-003).
     play     Run the Phase 1 demo loop (F-005).
+    analyze  Offline F-013 phase 1: review runs → failure_report.json.
+    distill  Offline F-013 phase 2: cluster failures → create/improve skills.
     config   Print effective configuration (with secrets masked).
 """
 
@@ -115,6 +117,103 @@ def _cmd_play(args: argparse.Namespace) -> int:
             live_server.stop()
 
 
+def _resolve_model(cfg: Config, override: str | None) -> Config:
+    if override:
+        return dataclasses.replace(cfg, llm=dataclasses.replace(cfg.llm, model=override))
+    return cfg
+
+
+def _print_role_usage(tracker, roles: Sequence[str]) -> None:
+    totals = tracker.role_totals()
+    for role in roles:
+        u = totals.get(role)
+        if u:
+            print(f"  {role}: in={u.input_tokens} out={u.output_tokens}")
+
+
+def _cmd_analyze(args: argparse.Namespace) -> int:
+    """Offline F-013 phase 1: review runs and write failure_report.json."""
+    from pathlib import Path
+
+    from slay2agent.llm.factory import build_llm_adapter
+    from slay2agent.llm.usage import UsageTracker
+    from slay2agent.maintenance.analyze import analyze_runs
+
+    cfg = _resolve_model(Config.load(), args.model)
+    adapter = build_llm_adapter(cfg.llm)
+    tracker = UsageTracker()
+    try:
+        min_steps = (
+            args.min_steps
+            if args.min_steps is not None
+            else cfg.memory.maintenance_min_steps
+        )
+        result = analyze_runs(
+            Path(args.runs_dir),
+            adapter,
+            tracker,
+            model=cfg.llm.model,
+            force=args.force,
+            min_steps=min_steps,
+            extra_body=cfg.llm.subagent_extra_body,
+        )
+    except Exception as exc:
+        print(f"analyze: fatal error — {exc}", file=sys.stderr)
+        return 1
+
+    print(
+        f"analyze: reviewed={len(result.analyzed)} "
+        f"failed={len(result.failed)} skipped={result.skipped} "
+        f"skipped_short={result.skipped_short}"
+    )
+    if result.failed:
+        print(f"  failed runs: {', '.join(result.failed)}", file=sys.stderr)
+    _print_role_usage(tracker, ["failure_analyzer"])
+    return 1 if result.failed and not result.analyzed else 0
+
+
+def _cmd_distill(args: argparse.Namespace) -> int:
+    """Offline F-013 phase 2: cluster failures and create/improve skills."""
+    from pathlib import Path
+
+    from slay2agent.llm.factory import build_llm_adapter
+    from slay2agent.llm.usage import UsageTracker
+    from slay2agent.maintenance.distill import distill_runs
+
+    cfg = _resolve_model(Config.load(), args.model)
+    adapter = build_llm_adapter(cfg.llm)
+    tracker = UsageTracker()
+    try:
+        min_steps = (
+            args.min_steps
+            if args.min_steps is not None
+            else cfg.memory.maintenance_min_steps
+        )
+        result = distill_runs(
+            Path(args.runs_dir),
+            cfg.memory.skills_dir,
+            adapter,
+            tracker,
+            model=cfg.llm.model,
+            min_cluster_size=args.min_cluster_size,
+            min_steps=min_steps,
+            extra_body=cfg.llm.subagent_extra_body,
+        )
+    except Exception as exc:
+        print(f"distill: fatal error — {exc}", file=sys.stderr)
+        return 1
+
+    print(
+        f"distill: reports={result.reports_consumed} "
+        f"skipped_short={result.reports_skipped_short} clusters={result.clusters} "
+        f"created={len(result.created)} improved={len(result.improved)} skipped={result.skipped}"
+    )
+    for action, sid in [("created", s) for s in result.created] + [("improved", s) for s in result.improved]:
+        print(f"  {action}: {sid}")
+    _print_role_usage(tracker, ["distiller_cluster", "distiller"])
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="slay2agent",
@@ -175,6 +274,46 @@ def build_parser() -> argparse.ArgumentParser:
         help="Port for the live viewer HTTP server (default: 8765).",
     )
     p_play.set_defaults(func=_cmd_play)
+
+    p_analyze = sub.add_parser(
+        "analyze",
+        help="Offline F-013 phase 1: review runs → failure_report.json.",
+    )
+    p_analyze.add_argument(
+        "--model", default=None, help="Override LLM_MODEL for analysis (default: env / config)."
+    )
+    p_analyze.add_argument(
+        "--runs-dir", default="runs", help="Directory holding run traces (default: runs/)."
+    )
+    p_analyze.add_argument(
+        "--force", action="store_true",
+        help="Re-analyze every run, overwriting existing failure_report.json.",
+    )
+    p_analyze.add_argument(
+        "--min-steps", type=int, default=None,
+        help="Only analyze runs with at least this many steps (default: MAINTENANCE_MIN_STEPS / 10).",
+    )
+    p_analyze.set_defaults(func=_cmd_analyze)
+
+    p_distill = sub.add_parser(
+        "distill",
+        help="Offline F-013 phase 2: cluster failures → create/improve skills.",
+    )
+    p_distill.add_argument(
+        "--model", default=None, help="Override LLM_MODEL for distillation (default: env / config)."
+    )
+    p_distill.add_argument(
+        "--runs-dir", default="runs", help="Directory holding run traces (default: runs/)."
+    )
+    p_distill.add_argument(
+        "--min-cluster-size", type=int, default=2,
+        help="Minimum failures in a cluster before it earns a skill (default: 2).",
+    )
+    p_distill.add_argument(
+        "--min-steps", type=int, default=None,
+        help="Only distill reports from runs with at least this many steps (default: MAINTENANCE_MIN_STEPS / 10).",
+    )
+    p_distill.set_defaults(func=_cmd_distill)
 
     return parser
 

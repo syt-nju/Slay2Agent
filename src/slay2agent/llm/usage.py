@@ -1,9 +1,9 @@
 """Usage tracker: per-(role, model) token accumulation. No pricing.
 
 Bucketing by ``(agent_role, model)`` is required so run summaries can split
-tokens across the three agents (main / skill_creator / oracle_updater) even
-when they share the same model slug — see F-002 acceptance #4 and the run
-summary requirement in F-005 / F-007.
+tokens across agent roles (main / oracle_updater / compactor) even when they
+share the same model slug — see F-002 acceptance #4 and the run summary
+requirement in F-005 / F-007.
 """
 
 from __future__ import annotations

@@ -18,10 +18,10 @@ slay2agent 是一个**研究型 testbed**,用于探索"什么样的 memory 与 c
 - 单脚本入口:从 main menu 启动,按配置选角色 + ascension,跑到 `game_over` 或死循环终止,无人工介入。
 - 三层 memory 架构:
   - **L0 小关内 in-context**(`state_type` 切换即清空)
-  - **L1 skill 库**(metadata 强插 system prompt + 模型主动 read body)
+  - **L1 skill 库**(metadata 强插 system prompt + 模型主动 read body;**推理期只读**,由离线 CLI 流水线按完整轨迹维护 —— 见 F-013)
   - **L2 `oracle.md`**(强插 system prompt,run 结束时由独立 sub-agent 重写)
-- 三类 agent(主 agent / skill creator / oracle updater)**共用底层基础设施**(LLM client、tool dispatch、token tracking、trace writer)。
-- 每次 run 结束输出三类 agent 各自的 input/output token 量。
+- 主 agent、oracle updater(run 末)、离线 skill 维护流水线(CLI)**共用底层基础设施**(LLM client、tool dispatch、token tracking、trace writer)。
+- 每次 run 结束输出各 agent 角色各自的 input/output token 量。
 - 维护 `docs/memory-iteration-log.md` 记录 memory 设计每次迭代。
 
 ### Non-goals
@@ -119,7 +119,7 @@ trace 是 memory 设计迭代的唯一研究素材,必须在 F-008 之前可用�
 
 **Acceptance criteria**
 
-- 每步至少记录:`step`、`timestamp`、`state_type`、L0 是否在此步被清空、注入到 system prompt 的 skill metadata 列表 + `oracle.md` 版本标识、主 agent 完整 LLM request/response、被调用的 tool 与参数、settle 后的新 state 摘要。
+- 每步至少记录:`step`、`timestamp`、`state_type`、L0 是否在此步被清空、注入到 system prompt 的 skill metadata 列表 + `oracle.md` 版本标识、主 agent 完整 LLM request/response、被调用的 tool 与参数、被执行动作的原始返回/报错串(`action_feedback`,供 F-013 离线轨迹重建用,使每步自描述)、settle 后的新 state 摘要。
 - 每次 sub-agent 触发(skill creator / oracle updater)记录:触发原因、输入摘要、完整 LLM request/response、产生的文件级修改 diff(skill 文件增删改,或 `oracle.md` 重写)。
 - run 结束后输出 `runs/<run_id>/summary.json`,包含终止原因(`game_over` / `loop_terminated` / `error`)、三类 agent 各自 input/output token 总量、调用次数。
 - trace 必须能被人工或脚本以 jsonl/json 形式直接读取,不依赖运行时数据库。
@@ -133,26 +133,17 @@ trace 是 memory 设计迭代的唯一研究素材,必须在 F-008 之前可用�
 **Acceptance criteria**
 
 - skill 以文件形式存放在固定 memory dir(具体路径由 framework-design 定义),格式对齐 mainstream Claude Code / Cursor `.cursor/skills/*/SKILL.md` 约定。
-- 每个 skill 文件 = YAML frontmatter (`name` + `description`) + 自包含的 markdown body。`description` 是注入主 agent 的唯一触发信号,必须同时表达"做什么"与"何时使用"(pattern: `<summary>. Use when <trigger>.`)。
-- 主 agent 每步 system prompt 强制注入:全部 skill 的 metadata 列表 + 当前 `oracle.md` 全文。
-- 主 agent 暴露两个 memory 工具:`list_skills()`、`read_skill(skill_id)`。**无 write、无 python exec、无 compact**。
+- 每个 skill 文件 = YAML frontmatter (`name` + `failure_reason` + `description`) + 自包含的 markdown body(具体细节)。`description` 是注入主 agent 的唯一触发信号,必须同时表达"做什么"与"何时使用"(pattern: `<summary>. Use when <trigger>.`)。`failure_reason` 仅供 F-013 离线流水线创建/改进时比对去重用,**不注入 play-time system prompt**,主 agent 选 skill 只看 `description`。
+- 主 agent 每步 system prompt 强制注入:全部 skill 的 `description` 列表 + 当前 `oracle.md` 全文。
+- 主 agent 暴露两个 memory 工具:`list_skills()`、`read_skill(skill_id)`。**无 write、无 python exec、无 compact**;推理期 skill 库只读。
 - skill 文件格式应允许人工编辑,以便研究者直接调整。
 - skill 库为空 / `oracle.md` 为空时主 agent 仍能正常决策。
 
 ### F-008b Skill Creator Sub-agent
 
-**Status:** planned after F-008a
+**Status:** superseded by F-013（v3 重构）
 
-一个独立 sub-agent,在每次 `state_type` 切换边界自动启动,基于刚结束的小关 trace 维护 skill 库。
-
-**Acceptance criteria**
-
-- 触发时机:`state_type` 切换且上一段不是空段(刚启动除外)。
-- 输入:上一段 L0 完整 trace + 当前 `oracle.md` + 现有 skill 库可读访问。
-- 工具集:`list_skills` / `read_skill` / `write_skill` / `delete_skill`,**不能修改 `oracle.md`**。
-- prompt 强制流程:在做任何 `write` / `delete` 之前,必须先通过 `list` + `read` 检查是否存在相似 skill,优先选择"扩写已有 skill"或"合并相似 skill",最后才考虑"新建 skill"。匹配过程必须出现在 sub-agent 的 reasoning 中并写入 trace。
-- 与主 agent 共用同一个 LLM adapter / tool dispatch / token tracker / trace writer,不允许重复实现。
-- 触发失败(网络 / LLM 错误)记录 `logger.error(...)`,不阻断主 agent 推理。
+> **已废弃。** 原设计在每次 `state_type` 切换边界触发 sub-agent 维护 skill 库,实测触发频率过高(一局 60–100+ 次)、粒度过细,导致 skill 数量爆炸(motivation 见 `memory-iteration-log.md` v3)。skill 维护改为 **F-013 离线两阶段 CLI 流水线**,基于完整轨迹而非单段 L0。原 `skill_creator`(边界触发)、`skill_librarian`(run 末去重)、LRU skill cache 全部移除。
 
 ### F-008c Oracle Updater Sub-agent
 
@@ -249,10 +240,50 @@ trace 是 memory 设计迭代的唯一研究素材,必须在 F-008 之前可用�
 - 可通过配置关闭（`L0_COMPACT_ENABLED=false`），默认开启。
 - compaction 事件写入 trace（`subagent.jsonl`），包含压缩前后 message 数、摘要内容。
 
+### F-013 Offline Skill Maintenance Pipeline（v3 重构）
+
+**Status:** planned（取代 F-008b）
+
+**动机:** 旧 `skill_creator` 在每个 `state_type` 边界触发,一局 60–100+ 次、粒度过细,加上 run 末单次 `skill_librarian` 去重压不住,导致 **skill 数量爆炸**。本 feature 把 skill 的创建/总结从"推理期实时、按小关片段"重构为"**离线、CLI 手动触发、按完整轨迹的两阶段流水线**",并使推理期 skill 库完全只读。详见 `memory-iteration-log.md` v3。
+
+**Acceptance criteria**
+
+*推理期(play)行为变化:*
+
+- 移除 `state_type` 边界触发的 `skill_creator`、run 末的 `skill_librarian`、两级 LRU skill cache(`skill_cache.py`)。play 过程对 skill 库**零写入**。
+- play 时 system prompt **全量注入所有 skill 的 `description`**(不再分级);`list_skills` / `read_skill` 懒加载 body 不变。
+- `oracle_updater`(F-008c,run 末)行为保持不变。
+
+*轨迹存储与重建(确定性):*
+
+- 每次 run 的完整上下文轨迹持久化在 `runs/<run_id>/steps.jsonl`(已有);新增 `StepRecord.action_feedback` 字段(F-007 amendment),记录被执行动作的原始返回/报错串。
+- 提供**确定性**的轨迹重建:固定代码逻辑,仅从 `steps.jsonl` 顶层字段(`state_type` / `tool_name` / `tool_args` / `action_feedback` / `settled_state_summary`)投影出"动作 → 反馈 → 结果状态"序列。不调用 LLM、不重新解析游戏 JSON、不依赖 `llm_request_messages`(因而免疫 L0 compaction)。
+
+*阶段1 — 失败分析(`slay2agent analyze`):*
+
+- 扫描 `runs/` 下所有**尚未生成** `failure_report.json` 的 run,逐条分析(不纠结输赢,每条都复盘)。
+- 每条产出 `runs/<run_id>/failure_report.json`(JSON,不加分类/标签字段):分点列出若干失败原因,每条含失败原因描述 + 对应轨迹片段(step 区间 + 摘录)。
+- 模型默认取 env 中正在使用的模型(`LLM_MODEL`)。
+- `failure_report.json` 存在 = 该 run 已分析(再次运行跳过)。
+
+*阶段2 — skill 蒸馏(`slay2agent distill`):*
+
+- 取所有**尚未被处理**(报告中无 `distilled_at`)的 `failure_report.json`,分两个 **context 隔离** 的子步骤:
+  - **2a 聚类**:输入仅为各报告的失败原因,产出"相似且高频"的共性失败原因组(是否共性/高频完全由 LLM 判断,无固定 N 阈值)。该 context 不含 skill 库现状。
+  - **2b 蒸馏**:对每个共性失败原因组开**独立 context**,喂该组失败原因 + 对应轨迹片段 + 现有 skill 的 `failure_reason` + `description`(允许 `read_skill` 读 body),由 LLM 判定"新建 skill"或"覆盖改进某条已有 skill"。改进 = 整文件覆盖重写。
+- 产出/改进的 skill 遵循严格 template:`failure_reason`(针对的失败原因)+ `description`(apply when 触发条件)+ body(具体细节)。
+- 处理完的报告回写 `distilled_at` 字段(再次运行跳过)。
+
+*共用基础设施 & 错误处理:*
+
+- analyze / distill 与主 agent 共用同一 LLM adapter / tool dispatch / token tracker。
+- 单条 run 分析失败 / 单个失败原因组蒸馏失败时记录 `logger.error(...)`,跳过该条继续处理其余,不让整批中断。
+
 ## Open Questions
 
 - skill metadata 是否需要在 `name` + `description` 之外再加 `examples` / `tags` / `applicable_state_types` 等结构化字段 → v1 起对齐 mainstream,只保留 `name` + `description`(`description` 自带 "use when ..." 触发条件);后续若主 agent 召回不稳定,再考虑加结构化字段。
 - loop detector 的 N 与阈值默认值 → F-006 实施后用实际 trace 估计。
-- skill creator 是否需要"建议"边界(每小关最多写 N 个 skill)→ 首版默认不限,F-008b 跑过后再评估。
+- ~~skill creator 是否需要"建议"边界(每小关最多写 N 个 skill)~~ → v3 已移除边界触发,skill 由 F-013 离线流水线维护,该问题作废。
 - `oracle.md` 4k tokens 软上限是否合理 → 阶段二第一次跑通后回看 token 占比再调整。
-- skill creator 与 main agent 之间的同步关系(同步阻塞 vs 异步限时)→ 首版同步阻塞,后续看延迟数据决定。
+- ~~skill creator 与 main agent 之间的同步关系~~ → v3 已移除推理期 skill 维护,该问题作废。
+- (F-013) 阶段2a 聚类的批大小与"高频"判定全交 LLM 是否稳定 → 跑过若干批后回看,必要时再引入显式阈值。

@@ -4,10 +4,11 @@
 
 ## Current Mode
 
-Execution Mode(除非 memory 设计需要再次重审,届时回 Design Mode)。
+Execution Mode(刚完成一次 Design Mode 重审 → memory-iteration-log v3 / F-013)。
 
 阶段一目标:跑出"main menu → 一局 `game_over`"的端到端 demo loop,期间 memory 系统从空 skill / 空 oracle 起步。
 阶段二目标:启用 skill creator / oracle updater 两个 sub-agent,在跑通的 demo loop 上开始 memory 设计的纵向迭代。
+**v3 重构(代码已落地, 待线上验证):** skill 维护从"推理期边界触发"重构为"离线 CLI 两阶段流水线(F-013)",解决 skill 数量爆炸。Phase 7 全部实现 + 单测绿(305 passed),`memory-iteration-log.md` v3 的 `observed` 待首次真实跑过后补填。
 
 ## Feature Order
 
@@ -22,6 +23,9 @@ Execution Mode(除非 memory 设计需要再次重审,届时回 Design Mode)。
 9. F-008c Oracle Updater Sub-agent ✅
 10. F-009 Live Context Viewer ✅
 11. F-010 Provider-Agnostic LLM Config (OpenAI-Compatible Adapter) ✅
+12. F-011 UnknownView Raw Payload Exposure ✅
+13. F-012 L0 Compaction Sub-agent ✅
+14. F-013 Offline Skill Maintenance Pipeline ✅（代码+单测；取代 F-008b 的边界触发机制，待线上验证）
 
 F-005 / F-006 / F-007 互相耦合,会在同一个 phase 内推进:demo loop 走通必须有 tool bridge + trace。F-008a 是 F-008b/c 的硬前置(没有 skill 文件结构,sub-agent 无处写)。
 
@@ -194,6 +198,58 @@ Expected verification (已完成):
 - [x] 测试：阈值触发、压缩后 L0 结构正确、失败不阻断（16/16 绿）
 - [x] `memory-iteration-log.md` 新增 entry（v2）
 
+## Phase 7 — Offline Skill Maintenance (F-013, v3 重构)
+
+目标：解决 skill 数量爆炸。删除推理期 skill 维护，改为离线 CLI 两阶段流水线。任务顺序大致按依赖排列。
+
+### 7.1 移除旧机制（推理期回归只读）
+
+- [x] 删除 `src/slay2agent/agent/skill_librarian.py` + `tests/test_skill_librarian.py`，移除 `loop.py` 里 run 末 `run_skill_librarian` 调用
+- [x] 删除 `src/slay2agent/memory/skill_cache.py` + 相关测试（`test_skill_cache.py` / `test_skill_cache_integration.py`），从 `memory/__init__.py` 移除导出
+- [x] 删除 `src/slay2agent/agent/skill_creator.py` + `tests/test_skill_creator.py`（边界触发的 sub-agent，整体废弃）
+- [x] `skill_registry.py` 去掉 `skill_cache` 耦合（`promote` / `add_new` / L1/L2 list / `_handle_evictions` / `sync_with_disk`）；`list_skills` 直接返回全部，`metadata_lines` 注入全部 `description`
+- [x] `loop.py` 删除 `state_type` 边界的 `run_skill_creator` async task 触发；保留 L0 清空；run 末仅保留 `skill_registry.reload()` + `oracle_updater`
+- [x] `config.py` 移除 `skill_cache_path`；`protocol.AgentRole` 去 `skill_creator`、加 F-013 三个角色
+
+### 7.2 trace：新增 `action_feedback`（F-007 amendment）
+
+- [x] `StepRecord` 加字段 `action_feedback: str | None`
+- [x] `loop.py` 把被执行动作的报错/拒绝串写入该字段（成功为 `None`，结果在 `settled_state_summary`）
+- [x] 更新 `tests/test_trace.py`
+
+### 7.3 skill 格式：新增 `failure_reason`
+
+- [x] `skill_registry.py`：`Skill` / `SkillMeta` 加 `failure_reason`；`write_skill` 写入该 frontmatter 字段；解析器读取（`_parse_frontmatter` 已支持任意 key）
+- [x] play-time 注入仍只用 `description`（`failure_reason` 不进 system prompt）；测试锁死该不变量
+- [ ] 迁移/清空既有 skill（用户会手动删 `agent_state/skills/` 重来）
+
+### 7.4 确定性轨迹重建
+
+- [x] 新模块 `src/slay2agent/memory/trajectory.py`：`reconstruct_trajectory(steps_path) -> str` + `load_steps`，逐 step 投影 `state_type` / `tool_name` / `tool_args` / `action_feedback` / `settled_state_summary`
+- [x] 纯函数、固定逻辑、不调 LLM；单测覆盖（含报错步、l0_cleared 段落边界、坏行跳过、确定性）
+
+### 7.5 阶段1：`slay2agent analyze`（失败分析）
+
+- [x] `maintenance/failure_analyzer.py`：单次调用 + `submit_failure_report` 工具（role=`failure_analyzer`），纯函数返回 report dict
+- [x] `maintenance/report.py` + `maintenance/analyze.py`：扫描 `runs/` 跳过已有 `failure_report.json` 的 run；逐条重建轨迹 → 分析 → 写 `failure_report.json`（`overall_review` + `failures[{summary,detail,step_range,excerpt}]`）
+- [x] CLI 子命令 `analyze`（`--runs-dir` / `--model` / `--force`）
+- [x] 单条失败 `logger.error` 跳过且不写报告（下次重试），不中断整批；测试
+
+### 7.6 阶段2：`slay2agent distill`（skill 蒸馏，context 隔离）
+
+- [x] 2a 聚类：输入仅失败原因，输出共性失败原因组（role=`distiller_cluster`，`submit_clusters` 工具）
+- [x] 2b 蒸馏：每组独立 context，喂失败原因 + 轨迹片段 + 现有 skill 的 `failure_reason`+`description`，工具 `read_skill` + `submit_decision`，判定 create / improve(整文件覆盖) / skip（role=`distiller`）
+- [x] 取未含 `distilled_at` 的报告；处理完回写 `distilled_at`（含无失败/低于阈值的报告，避免反复重算）
+- [x] CLI 子命令 `distill`（`--min-cluster-size` 控制高频阈值）
+- [x] 单组失败/无决策 `logger.error` 跳过；测试
+
+### 7.7 收尾
+
+- [x] `summary.json` 的 `all_roles` 改为 `main` / `oracle_updater` / `compactor`（offline analyzer/distiller 不进 run summary，token 由各自 CLI 打到 stdout）
+- [x] viewer：usage 面板 `skill_creator` 行改为 `compactor`
+- [x] README 更新 skill 维护说明 + 新 CLI 命令（analyze / distill）
+- [x] 全量测试绿（305 passed）；`memory-iteration-log.md` v3 的 `observed` 在首次跑过后补填
+
 ## Open Blocks
 
 - 需要本地 STS2 + STS2MCP 运行环境做 F-005 起的端到端验证(无 GPU 要求,但需要游戏客户端)。
@@ -210,6 +266,7 @@ Expected verification (已完成):
 - 旧 F-006 内的 `pre_execute` 参数预校验:废弃,STS2MCP 报错走 `ActionError` 路径。
 - 旧 F-007 内的胜率 / Act 进度 / baseline 对照:删除,研究方法改为纵向迭代 + memory-iteration-log。
 - 旧 F-008 内的 reflect / playbook / memory 三选一架构:替换为 L0 / L1 / L2 三层 + 两个 sub-agent。
+- (v3) `skill_creator`(`state_type` 边界触发)、`skill_librarian`(run 末去重)、两级 LRU skill cache(`skill_cache.py`):全部移除。原因:边界触发频率过高(一局 60–100+ 次)致 skill 数量爆炸,单次 librarian 去重压不住。改为 F-013 离线两阶段 CLI 流水线,按完整轨迹维护 skill,推理期 skill 库只读。
 - 旧 F-009 Deferred Extensions:并入 Non-goals。
 - 旧 Open Block "F-003 needs samples":已 stale,真实 fixtures 早已收集。
 - 主 agent 的 python exec / compact / 通用文件 write 工具:不在 v0 范围。

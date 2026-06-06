@@ -6,25 +6,25 @@ Implements the end-to-end flow described in framework-design.md:
         state = get_state()
         if state_type changed and prev segment non-empty:
             flush L0
-            (skill_creator stub — runs in F-008b)
-        inject skill metadata + oracle.md into system prompt
+        inject all skill descriptions + oracle.md into system prompt
         main_agent.decide(compact_view(state)) -> tool call or text
         tool_bridge.gate -> post_action_and_settle
-        write trace step
+        write trace step (incl. action_feedback)
         if loop_detector triggers OR state == game_over:
-            (oracle_updater stub — runs in F-008c)
+            run oracle_updater
             break
 
 L0 is the in-context message history.  It is cleared on every state_type
 transition so the agent starts each "screen" with a clean context (only the
-injected system prompt carries over via the skill/oracle stubs).
+injected system prompt carries over via the skill/oracle injections).
 
-The agent does NOT expose python-exec, compact, or write-memory tools.
+The skill library is **read-only at play time** — creation / merge / delete
+happens offline via the F-013 CLI pipeline (analyze / distill).  The agent
+does NOT expose python-exec, compact, or write-memory tools.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
@@ -34,8 +34,6 @@ from typing import Any
 from slay2agent.agent.compactor import run_l0_compaction
 from slay2agent.agent.issue_logger import log_loop_issue, log_unknown_view_issue
 from slay2agent.agent.oracle_updater import run_oracle_updater
-from slay2agent.agent.skill_creator import run_skill_creator
-from slay2agent.agent.skill_librarian import run_skill_librarian
 from slay2agent.agent.tool_bridge import LoopDetected, LoopDetector, ToolBridge, MEMORY_TOOL_NAMES
 from slay2agent.agent.trace import (
     StepRecord,
@@ -51,7 +49,6 @@ from slay2agent.llm.protocol import AgentRole, LLMAdapter, Message, ToolCall
 from slay2agent.llm.retry import call_with_retry
 from slay2agent.llm.usage import UsageTracker
 from slay2agent.memory.oracle import oracle_version, read_oracle
-from slay2agent.memory.skill_cache import SkillCache
 from slay2agent.memory.skill_registry import SkillRegistry
 from slay2agent.viewer.observer import NoOpObserver, RunObserver
 
@@ -120,13 +117,11 @@ def _build_run_trace_summary(
     """Compact text summary of the completed run for oracle_updater context."""
     usage = tracker.role_totals()
     main_u = usage.get("main")
-    sc_u = usage.get("skill_creator")
     return "\n".join([
         "Run summary (for oracle_updater context):",
         f"- Total agent steps: {total_steps}",
         f"- Termination reason: {termination_reason}",
         f"- Main agent tokens used: {(main_u.input_tokens + main_u.output_tokens) if main_u else 0}",
-        f"- Skill creator tokens used: {(sc_u.input_tokens + sc_u.output_tokens) if sc_u else 0}",
     ])
 
 
@@ -213,9 +208,8 @@ async def run_demo_loop(
         repeat_threshold=run_cfg.repeat_threshold,
     )
 
-    # F-008a: initialise memory layer with two-level LRU cache.
-    skill_cache = SkillCache.load(cfg.memory.skill_cache_path)
-    skill_registry = SkillRegistry(cfg.memory.skills_dir, skill_cache=skill_cache)
+    # F-008a / F-013: skill library is read-only at play time.
+    skill_registry = SkillRegistry(cfg.memory.skills_dir)
     oracle_path = cfg.memory.oracle_path
 
     logger.info("starting run %s  character=%s asc=%d", run_id, run_cfg.character, run_cfg.ascension)
@@ -238,9 +232,7 @@ async def run_demo_loop(
         prev_state_type: str | None = None
         prev_is_play_phase: bool | None = None
         step = 0
-        initial_skill_ids = frozenset(s.skill_id for s in skill_registry.list_skills())
         seen_unknown_state_types: set[str] = set()
-        _skill_creator_tasks: list[asyncio.Task[None]] = []
 
         try:
             while True:
@@ -278,10 +270,12 @@ async def run_demo_loop(
                 prev_is_play_phase = is_play_phase
 
                 # ── L0 clear on state_type transition ───────────────────────
+                # Skill maintenance no longer happens here (F-013 moved it
+                # offline). The boundary only clears L0 and resets the loop
+                # detector; the skill library stays read-only for the whole run.
                 l0_cleared = False
                 if prev_state_type is not None and state_type != prev_state_type:
                     if l0:
-                        prev_l0_segment = l0  # capture before clear
                         logger.info(
                             "state_type changed %s → %s — clearing L0 (%d messages)",
                             prev_state_type, state_type, len(l0),
@@ -289,35 +283,16 @@ async def run_demo_loop(
                         l0 = []
                         l0_cleared = True
                         observer.on_memory_event("L0_cleared", f"{prev_state_type} → {state_type}")
-                        # F-008b: run skill creator on the completed segment (background asyncio task)
-                        _task = asyncio.create_task(
-                            asyncio.to_thread(
-                                run_skill_creator,
-                                prev_l0_segment,
-                                skill_registry,
-                                oracle_path,
-                                adapter,
-                                tracker,
-                                trace,
-                                model=cfg.llm.model,
-                                prev_state_type=prev_state_type,
-                                new_state_type=state_type,
-                                observer=observer,
-                                extra_body=cfg.llm.subagent_extra_body,
-                            ),
-                            name=f"skill_creator_{prev_state_type}_{state_type}",
-                        )
-                        _skill_creator_tasks.append(_task)
                     # Reset loop detector so actions from one screen don't
                     # pollute the window for the next.
                     loop_detector.reset()
 
                 prev_state_type = state_type
 
-                # NOTE: skill_registry.reload() is intentionally NOT called on
-                # state_type transitions to preserve KV cache hit rate (the
-                # system prompt skill list stays stable within a run). Reload
-                # happens once at run end (see finally block).
+                # NOTE: skill_registry.reload() is intentionally NOT called
+                # mid-run to preserve KV cache hit rate (the system prompt skill
+                # list stays stable within a run). Reload happens once at run
+                # end (see finally block).
 
                 skill_meta_lines = skill_registry.metadata_lines()
                 oracle_content = read_oracle(oracle_path)
@@ -418,6 +393,7 @@ async def run_demo_loop(
                 tool_result_state_type: str | None = None
                 settled_summary = compact  # fallback if no tool call
                 loop_warning_raw_injected = False
+                action_feedback: str | None = None  # error/rejection text, else None
 
                 if assistant_msg.tool_calls:
                     tool_call = assistant_msg.tool_calls[0]
@@ -523,11 +499,13 @@ async def run_demo_loop(
                             tool_args=action_args,
                             tool_result_state_type=None,
                             settled_state_summary=compact,
+                            action_feedback=f"LOOP DETECTED: {exc}",
                         ))
                         break
 
                     except ActionError as exc:
                         logger.error("action %r failed: %s — injecting error into L0", action_name, exc)
+                        action_feedback = f"ERROR: {exc}"
                         l0.append(assistant_msg)
                         l0.append(Message(
                             role="tool",
@@ -544,6 +522,7 @@ async def run_demo_loop(
                     except ValueError as exc:
                         # Gate rejection.
                         logger.error("gate rejected %r: %s", action_name, exc)
+                        action_feedback = f"ERROR: {exc}"
                         l0.append(assistant_msg)
                         l0.append(Message(
                             role="tool",
@@ -583,6 +562,7 @@ async def run_demo_loop(
                     tool_result_state_type=tool_result_state_type,
                     settled_state_summary=settled_summary,
                     loop_warning_raw_injected=loop_warning_raw_injected,
+                    action_feedback=action_feedback,
                 ))
 
                 step += 1
@@ -597,14 +577,8 @@ async def run_demo_loop(
             observer.on_run_end("error", step)
 
         finally:
-            # Wait for any background skill_creator tasks to finish before
-            # reloading the registry, so the reload picks up all their writes.
-            if _skill_creator_tasks:
-                logger.info("waiting for %d background skill_creator task(s)…", len(_skill_creator_tasks))
-                await asyncio.gather(*_skill_creator_tasks, return_exceptions=True)
-
-            # Reload skill registry at run end so next run picks up all changes
-            # made by skill_creator during this run (kept stable mid-run for KV cache).
+            # Reload skill registry at run end (kept stable mid-run for KV
+            # cache); cheap and keeps the snapshot below consistent with disk.
             skill_registry.reload()
 
             # F-008c: oracle_updater fires at run end (before writing summary)
@@ -621,19 +595,6 @@ async def run_demo_loop(
                 observer=observer,
                 extra_body=cfg.llm.subagent_extra_body,
             )
-
-            # Skill librarian: merge overlapping skills if new ones were created.
-            current_skill_ids = frozenset(s.skill_id for s in skill_registry.list_skills())
-            if current_skill_ids - initial_skill_ids:
-                run_skill_librarian(
-                    skill_registry=skill_registry,
-                    adapter=adapter,
-                    tracker=tracker,
-                    trace=trace,
-                    model=cfg.llm.model,
-                    observer=observer,
-                    extra_body=cfg.llm.subagent_extra_body,
-                )
 
             # Snapshot post-run memory (oracle + skills) into the run dir so
             # each trace carries an immutable record of what the next run will

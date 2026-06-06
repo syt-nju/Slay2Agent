@@ -2,7 +2,7 @@
 
 Writes to ``runs/<run_id>/``:
   - ``steps.jsonl``    — one JSON line per main-agent step
-  - ``subagent.jsonl`` — one JSON line per sub-agent invocation (F-008b/c)
+  - ``subagent.jsonl`` — one JSON line per sub-agent invocation (oracle_updater / compactor)
   - ``summary.json``   — written at run end; termination reason + token totals
 
 All writers are append-safe: ``steps.jsonl`` and ``subagent.jsonl`` are opened
@@ -58,6 +58,10 @@ class StepRecord:
     settled_state_summary: str
     # Loop warning: raw MCP state was injected into the tool result
     loop_warning_raw_injected: bool = False
+    # Raw result / error string of the executed action (F-013 deterministic
+    # reconstruction). ``None`` on success — the outcome is in
+    # ``settled_state_summary``; set to the error text on rejection/failure.
+    action_feedback: str | None = None
 
 
 @dataclass
@@ -117,7 +121,7 @@ class TraceWriter:
         role_totals = tracker.role_totals()
         call_counts = tracker.role_call_counts()
 
-        all_roles = ["main", "skill_creator", "oracle_updater", "skill_librarian", "compactor"]
+        all_roles = ["main", "oracle_updater", "compactor"]
         token_summary: dict[str, dict[str, int]] = {}
         for role in all_roles:
             u = role_totals.get(role)  # type: ignore[arg-type]
