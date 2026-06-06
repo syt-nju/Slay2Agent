@@ -43,7 +43,7 @@ from slay2agent.agent.trace import (
 )
 from slay2agent.config import Config
 from slay2agent.game.client import ActionError, GameClient
-from slay2agent.game.schema import CombatView, UnknownView, parse, to_compact_prompt
+from slay2agent.game.schema import CombatView, ParsedState, UnknownView, parse, to_compact_prompt
 from slay2agent.llm.factory import build_llm_adapter
 from slay2agent.llm.protocol import AgentRole, LLMAdapter, Message, ToolCall
 from slay2agent.llm.retry import call_with_retry
@@ -57,6 +57,11 @@ logger = logging.getLogger(__name__)
 # Default configuration for the demo loop.
 _DEFAULT_WINDOW_SIZE = 12
 _DEFAULT_REPEAT_THRESHOLD = 6
+# Enemy-turn polling: during combat enemy turn no legal player action exists,
+# so the loop sleeps and re-reads state instead of prompting the LLM. The wait
+# limit (~poll_interval * limit seconds) guards against a stuck engine.
+_DEFAULT_ENEMY_TURN_POLL_INTERVAL = 0.3
+_DEFAULT_ENEMY_TURN_WAIT_LIMIT = 200
 _AGENT_ROLE: AgentRole = "main"
 
 # System prompt preamble — injected every LLM call.
@@ -84,6 +89,16 @@ def _timestamp() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S")
 
 
+def _is_enemy_turn(parsed: ParsedState) -> bool:
+    """True iff this is a combat enemy turn, where the loop should poll-wait.
+
+    Every combat action is player-only and gated out during the enemy turn,
+    leaving the LLM only memory tools; prompting it there merely burns tokens
+    and invites gated end_turn / play_card retries.
+    """
+    return isinstance(parsed.view, CombatView) and not parsed.view.is_play_phase
+
+
 def _message_to_dict(msg: Message) -> dict[str, Any]:
     d: dict[str, Any] = {"role": msg.role}
     if msg.content is not None:
@@ -107,6 +122,8 @@ class RunConfig:
     runs_dir: Path = field(default_factory=lambda: Path("runs"))
     window_size: int = _DEFAULT_WINDOW_SIZE
     repeat_threshold: int = _DEFAULT_REPEAT_THRESHOLD
+    enemy_turn_poll_interval: float = _DEFAULT_ENEMY_TURN_POLL_INTERVAL
+    enemy_turn_wait_limit: int = _DEFAULT_ENEMY_TURN_WAIT_LIMIT
 
 
 def _build_run_trace_summary(
@@ -232,6 +249,7 @@ async def run_demo_loop(
         prev_state_type: str | None = None
         prev_is_play_phase: bool | None = None
         step = 0
+        enemy_wait_count = 0
         seen_unknown_state_types: set[str] = set()
 
         try:
@@ -288,6 +306,26 @@ async def run_demo_loop(
                     loop_detector.reset()
 
                 prev_state_type = state_type
+
+                # ── Enemy turn: poll instead of prompting the LLM ────────────
+                # No legal player action exists during the enemy turn, so calling
+                # the LLM here only burns tokens and triggers gated end_turn /
+                # play_card retries. Sleep and re-read state until it's our turn.
+                if _is_enemy_turn(parsed):
+                    enemy_wait_count += 1
+                    if enemy_wait_count > run_cfg.enemy_turn_wait_limit:
+                        logger.error(
+                            "enemy turn did not yield after %d polls (~%.0fs) — aborting run",
+                            enemy_wait_count,
+                            enemy_wait_count * run_cfg.enemy_turn_poll_interval,
+                        )
+                        termination_reason = "error"
+                        extra_summary["error"] = "enemy_turn_stuck"
+                        observer.on_run_end("error", step)
+                        break
+                    time.sleep(run_cfg.enemy_turn_poll_interval)
+                    continue
+                enemy_wait_count = 0
 
                 # NOTE: skill_registry.reload() is intentionally NOT called
                 # mid-run to preserve KV cache hit rate (the system prompt skill
